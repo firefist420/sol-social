@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, status
 from pydantic import BaseModel
 from solana.rpc.api import Client
 from solana.publickey import PublicKey
@@ -8,13 +8,13 @@ from dotenv import load_dotenv
 import os
 import logging
 from fastapi.middleware.cors import CORSMiddleware
+from typing import List
 
 load_dotenv()
 SOLANA_RPC_URL = os.getenv("SOLANA_RPC_URL")
 if not SOLANA_RPC_URL:
-    raise ValueError("SOLANA_RPC_URL environment variable not set.")
+    raise RuntimeError("SOLANA_RPC_URL environment variable not set")
 
-client = Client(SOLANA_RPC_URL)
 app = FastAPI()
 
 app.add_middleware(
@@ -25,27 +25,24 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 logger = logging.getLogger(__name__)
+client = Client(SOLANA_RPC_URL)
 
 class WalletAuthRequest(BaseModel):
     wallet_address: str
-    signed_message: list
+    signed_message: List[int]
     message: str
 
-@app.post("/auth/wallet")
-async def wallet_auth(request: WalletAuthRequest):
-    wallet_address = request.wallet_address
-    signed_message = request.signed_message
-    message = request.message
-    
-    is_verified = verify_signed_message(wallet_address, message, signed_message)
-    if not is_verified:
-        raise HTTPException(status_code=400, detail="Wallet verification failed.")
-    
-    return {"success": True, "user_id": wallet_address}
+class AuthResponse(BaseModel):
+    success: bool
+    user_id: str
+    auth_token: str = None
 
-def verify_signed_message(wallet_address, message, signed_message):
+def verify_signed_message(wallet_address: str, message: str, signed_message: List[int]) -> bool:
     try:
         public_key = PublicKey(wallet_address)
         signature_bytes = bytes(signed_message)
@@ -53,5 +50,29 @@ def verify_signed_message(wallet_address, message, signed_message):
         transaction = Transaction.populate(message_obj, [signature_bytes])
         return transaction.verify(public_key)
     except Exception as e:
-        logger.error(f"Verification error: {e}")
+        logger.error(f"Signature verification failed for {wallet_address}: {str(e)}")
         return False
+
+@app.post("/auth/wallet", response_model=AuthResponse)
+async def wallet_auth(request: WalletAuthRequest):
+    if not verify_signed_message(
+        request.wallet_address,
+        request.message,
+        request.signed_message
+    ):
+        logger.warning(f"Failed authentication attempt from {request.wallet_address}")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Wallet signature verification failed"
+        )
+    
+    logger.info(f"Successful authentication for {request.wallet_address}")
+    return {
+        "success": True,
+        "user_id": request.wallet_address,
+        "auth_token": "generated_jwt_here"
+    }
+
+@app.get("/health")
+async def health_check():
+    return {"status": "healthy"}
