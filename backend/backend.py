@@ -1,6 +1,6 @@
 from fastapi import FastAPI, HTTPException, status
 from pydantic import BaseModel
-from solders.rpc.requests import RpcClient
+from solders.rpc.api import RpcClient
 from solders.pubkey import Pubkey
 from solders.message import Message
 from solders.transaction import Transaction
