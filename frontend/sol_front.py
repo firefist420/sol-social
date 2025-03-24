@@ -5,10 +5,12 @@ import os
 import requests
 import sqlite3
 import base64
+import json
 
 load_dotenv()
 SOLANA_RPC_URL = os.getenv("SOLANA_RPC_URL")
 client = Client(SOLANA_RPC_URL)
+BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
 
 if "user_id" not in st.session_state:
     st.session_state["user_id"] = None
@@ -71,33 +73,54 @@ def phantom_login():
 
 def home_screen():
     st.title("Home")
-    st.write(f"Welcome, User: {st.session_state['user_id']}")
-    st.write(f"Wallet Address: {st.session_state['wallet_address']}")
-    st.header("Create a Post")
-    post_content = st.text_area("What's on your mind?")
+    st.write(f"Welcome, {st.session_state['user_id']}")
+    st.write(f"Wallet: {st.session_state['wallet_address'][:6]}...{st.session_state['wallet_address'][-4:]}")
+    
+    st.header("Create Post")
+    post_content = st.text_area("What's on your mind?", key="post_content")
     if st.button("Post"):
         if post_content:
-            new_post = {
-                "id": len(st.session_state["posts"]) + 1,
-                "content": post_content,
-                "author": st.session_state["user_id"],
-                "likes": 0
-            }
-            st.session_state["posts"].append(new_post)
-            st.success("Post created!")
+            try:
+                response = requests.post(
+                    f"{BACKEND_URL}/posts",
+                    json={
+                        "content": post_content,
+                        "author": st.session_state['user_id'],
+                        "wallet_address": st.session_state['wallet_address']
+                    }
+                )
+                if response.status_code == 200:
+                    st.session_state["posts"].append(response.json())
+                    st.success("Post created!")
+                else:
+                    st.error("Failed to create post")
+            except Exception as e:
+                st.error(f"Error: {e}")
+    
     st.header("Feed")
-    for post in st.session_state["posts"]:
-        st.write(f"**{post['author']}**: {post['content']}")
-        st.write(f"Likes: {post['likes']}")
-        if st.button(f"Like {post['id']}"):
-            post["likes"] += 1
-            st.experimental_rerun()
+    try:
+        response = requests.get(f"{BACKEND_URL}/posts")
+        if response.status_code == 200:
+            posts = response.json()
+            for post in posts:
+                with st.container():
+                    st.write(f"**{post['author']}**")
+                    st.write(post['content'])
+                    if st.button(f"?? {post.get('likes', 0)}", key=f"like_{post['id']}"):
+                        like_response = requests.post(
+                            f"{BACKEND_URL}/posts/{post['id']}/like",
+                            json={"wallet_address": st.session_state['wallet_address']}
+                        )
+                        if like_response.status_code == 200:
+                            st.experimental_rerun()
+    except Exception as e:
+        st.error(f"Error loading posts: {e}")
 
 def get_image_base64(path):
     with open(path, "rb") as image_file:
         return base64.b64encode(image_file.read()).decode("utf-8")
 
-background_image_path = "C:/Users/17327/Desktop/sol_social/assets/background.jpg.jpeg"
+background_image_path = "assets/background.jpg"
 background_image_base64 = get_image_base64(background_image_path)
 
 if st.session_state["user_id"]:
@@ -140,7 +163,7 @@ else:
         </style>
         <div class="solana-background">
             <button id="connect-button" class="connect-button">
-                <img src="https://th.bing.com/th/id/OIP.PkbqSXzG2ppbbP3dXWOM8AAAAA?rs=1&pid=ImgDetMain" alt="Phantom Logo" width="20" style="vertical-align: middle; margin-right: 5px;">
+                <img src="https://phantom.app/favicon.ico" alt="Phantom Logo" width="20" style="vertical-align: middle; margin-right: 5px;">
                 Connect Phantom Wallet
             </button>
         </div>
@@ -150,46 +173,37 @@ else:
 
     if st.session_state.get("wallet_connected"):
         wallet_address = st.session_state["wallet_address"]
-        st.write(f"Connected Wallet: {wallet_address}")
+        st.write(f"Connected Wallet: {wallet_address[:6]}...{wallet_address[-4:]}")
         message = st.session_state["message"]
         signed_message = st.session_state["signed_message"]
 
-        conn = sqlite3.connect("solsocial.db")
-        c = conn.cursor()
-        c.execute("SELECT * FROM users WHERE wallet_address = ?", (wallet_address,))
-        user = c.fetchone()
-        conn.close()
-
-        if user:
-            st.session_state["user_id"] = user[1] if user[1] else wallet_address
-            st.experimental_rerun()
-        else:
-            username = st.text_input("Choose a username (optional):")
-            if st.button("Sign Up"):
-                auth_url = "http://127.0.0.1:8000/auth/wallet"
-                payload = {
+        try:
+            auth_response = requests.post(
+                f"{BACKEND_URL}/auth/wallet",
+                json={
                     "wallet_address": wallet_address,
                     "signed_message": signed_message,
-                    "message": message,
+                    "message": message
                 }
-                try:
-                    response = requests.post(auth_url, json=payload)
-                    response.raise_for_status()
-                    if response.json().get("success"):
-                        conn = sqlite3.connect("solsocial.db")
-                        c = conn.cursor()
-                        c.execute("INSERT INTO users (wallet_address, username, signed_message, message) VALUES (?, ?, ?, ?)",
-                                  (wallet_address, username, str(signed_message), message))
-                        conn.commit()
-                        conn.close()
-
-                        st.session_state["user_id"] = username if username else wallet_address
-                        st.session_state["wallet_connected"] = True
-                        st.experimental_rerun()
-                    else:
-                        st.error("Wallet verification failed. Please check your wallet and try again.")
-                except requests.exceptions.RequestException as e:
-                    st.error(f"An error occurred: {e}")
+            )
+            
+            if auth_response.status_code == 200:
+                data = auth_response.json()
+                username = st.text_input("Choose a username (optional):")
+                if st.button("Complete Sign Up"):
+                    conn = sqlite3.connect("solsocial.db")
+                    c = conn.cursor()
+                    c.execute(
+                        "INSERT OR REPLACE INTO users (wallet_address, username, signed_message, message) VALUES (?, ?, ?, ?)",
+                        (wallet_address, username, json.dumps(signed_message), message)
+                    conn.commit()
+                    conn.close()
+                    st.session_state["user_id"] = username or wallet_address
+                    st.experimental_rerun()
+            else:
+                st.error("Wallet verification failed")
+        except Exception as e:
+            st.error(f"Authentication error: {e}")
 
 st.markdown("""
     <script>
