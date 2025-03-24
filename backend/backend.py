@@ -1,9 +1,9 @@
 from fastapi import FastAPI, HTTPException, status
 from pydantic import BaseModel
-from solders.rpc.api import RpcClient
-from solders.pubkey import Pubkey
-from solders.message import Message
-from solders.transaction import Transaction
+from solana.rpc.api import Client
+from solana.publickey import PublicKey
+from solana.message import Message
+from solana.transaction import Transaction
 from dotenv import load_dotenv
 import os
 import logging
@@ -30,7 +30,7 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
-client = RpcClient(SOLANA_RPC_URL)
+client = Client(SOLANA_RPC_URL)
 
 class WalletAuthRequest(BaseModel):
     wallet_address: str
@@ -44,12 +44,11 @@ class AuthResponse(BaseModel):
 
 def verify_signed_message(wallet_address: str, message: str, signed_message: List[int]) -> bool:
     try:
-        public_key = Pubkey.from_string(wallet_address)
+        public_key = PublicKey(wallet_address)
         signature_bytes = bytes(signed_message)
-        message_obj = Message.new(bytes(message, 'utf-8'))
-        transaction = Transaction.new_unsigned(message_obj)
-        transaction.add_signature(public_key, signature_bytes)
-        return transaction.verify()
+        message_obj = Message(bytes(message, 'utf-8'))
+        transaction = Transaction.populate(message_obj, [signature_bytes])
+        return transaction.verify(public_key)
     except Exception as e:
         logger.error(f"Signature verification failed: {str(e)}")
         return False
