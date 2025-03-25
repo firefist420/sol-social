@@ -17,7 +17,9 @@ SOLANA_RPC_URL = os.getenv("SOLANA_RPC_URL")
 if not SOLANA_RPC_URL:
     raise RuntimeError("SOLANA_RPC_URL environment variable not set")
 
-app = FastAPI("/")
+app = FastAPI()
+
+@app.get("/")
 
 app.add_middleware(
     CORSMiddleware,
