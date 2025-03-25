@@ -2,14 +2,105 @@
   "version": 2,
   "builds": [
     {
-      "src": "sol_front.py",
-      "use": "@vercel/python"
+      "src": "api/main.py",
+      "use": "@vercel/python",
+      "config": {
+        "maxLambdaSize": "15mb",
+        "runtime": "python3.9"
+      }
+    },
+    {
+      "src": "sol_frontend.py",
+      "use": "@vercel/streamlit",
+      "config": {
+        "maxLambdaSize": "15mb"
+      }
     }
   ],
   "routes": [
     {
-      "src": "/(.*)",
-      "dest": "sol_front.py"
+      "src": "/api/(.*)",
+      "dest": "api/main.py",
+      "methods": ["GET", "POST", "PUT", "DELETE"],
+      "headers": {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization"
+      }
+    },
+    {
+      "src": "/",
+      "dest": "sol_frontend.py",
+      "methods": ["GET"]
+    },
+    {
+      "src": "/assets/(.*)",
+      "status": 200,
+      "headers": {
+        "Cache-Control": "public, max-age=31536000, immutable"
+      }
     }
-  ]
+  ],
+  "functions": {
+    "api/light-task.js": {
+      "memory": 300,
+      "maxDuration": 10
+    },
+    "api/heavy-task.js": {
+      "memory": 512,
+      "maxDuration": 60
+    },
+    "api/main.py": {
+      "memory": 1024,
+      "maxDuration": 30,
+      "runtime": "python3.9"
+    },
+    "sol_frontend.py": {
+      "memory": 1024,
+      "maxDuration": 60
+    }
+  },
+  "env": {
+    "SOLANA_RPC_URL": "@solana-rpc-url",
+    "BACKEND_URL": "@backend-url",
+    "JWT_SECRET": "@jwt-secret"
+  },
+  "rewrites": [
+    {
+      "source": "/api/(.*)",
+      "destination": "api/main.py"
+    }
+  ],
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        {
+          "key": "X-Frame-Options",
+          "value": "DENY"
+        },
+        {
+          "key": "X-Content-Type-Options",
+          "value": "nosniff"
+        },
+        {
+          "key": "Referrer-Policy",
+          "value": "strict-origin-when-cross-origin"
+        },
+        {
+          "key": "Permissions-Policy",
+          "value": "geolocation=(), microphone=(), camera=()"
+        }
+      ]
+    }
+  ],
+  "overrides": {
+    "sol_frontend.py": {
+      "runtime": "python3.9",
+      "includeFiles": [
+        "assets/**",
+        "solsocial.db"
+      ]
+    }
+  }
 }
