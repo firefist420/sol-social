@@ -19,8 +19,6 @@ if not SOLANA_RPC_URL:
 
 app = FastAPI()
 
-@app.get("/")
-
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -74,6 +72,10 @@ def verify_signed_message(wallet_address: str, message: str, signed_message: Lis
     except Exception as e:
         logger.error(f"Signature verification failed: {str(e)}")
         return False
+
+@app.get("/")
+def home():
+    return {"message": "API is working"}
 
 @app.post("/auth/wallet", response_model=AuthResponse)
 async def wallet_auth(request: WalletAuthRequest):
