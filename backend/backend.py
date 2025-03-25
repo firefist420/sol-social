@@ -12,9 +12,10 @@ from typing import List, Optional
 app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["https://sol-social-frontend.vercel.app"],
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"]
 )
 
 logging.basicConfig(level=logging.INFO)
