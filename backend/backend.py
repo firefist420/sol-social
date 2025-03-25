@@ -1,37 +1,27 @@
 from fastapi import FastAPI, HTTPException, status
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from solana.rpc.api import Client
 from solders.pubkey import Pubkey
-from solders.message import Message
 from solders.transaction import Transaction
-from dotenv import load_dotenv
 import os
 import logging
-from fastapi.middleware.cors import CORSMiddleware
-from typing import List, Optional
-import json
 from datetime import datetime
-
-load_dotenv()
-SOLANA_RPC_URL = os.getenv("SOLANA_RPC_URL")
-if not SOLANA_RPC_URL:
-    raise RuntimeError("SOLANA_RPC_URL environment variable not set")
+from typing import List, Optional
 
 app = FastAPI()
-
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO)
+SOLANA_RPC_URL = os.getenv("SOLANA_RPC_URL")
+if not SOLANA_RPC_URL:
+    raise RuntimeError("SOLANA_RPC_URL not set")
+
 client = Client(SOLANA_RPC_URL)
 
 class WalletAuthRequest(BaseModel):
@@ -49,11 +39,8 @@ class PostCreate(BaseModel):
     author: str
     wallet_address: str
 
-class Post(BaseModel):
+class Post(PostCreate):
     id: int
-    content: str
-    author: str
-    wallet_address: str
     likes: int = 0
     liked_by: List[str] = []
     created_at: Optional[datetime] = None
@@ -70,29 +57,18 @@ def verify_signed_message(wallet_address: str, message: str, signed_message: Lis
         transaction.add_signature(public_key, signature_bytes)
         return transaction.verify()
     except Exception as e:
-        logger.error(f"Signature verification failed: {str(e)}")
+        logging.error(f"Signature verification failed: {str(e)}")
         return False
 
 @app.get("/")
 def home():
-    return {"message": "API is working"}
+    return {"status": "running"}
 
 @app.post("/auth/wallet", response_model=AuthResponse)
 async def wallet_auth(request: WalletAuthRequest):
-    if not verify_signed_message(
-        request.wallet_address,
-        request.message,
-        request.signed_message
-    ):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Wallet verification failed"
-        )
-    return {
-        "success": True,
-        "user_id": request.wallet_address,
-        "auth_token": "generated_jwt_here"
-    }
+    if not verify_signed_message(request.wallet_address, request.message, request.signed_message):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Wallet verification failed")
+    return {"success": True, "user_id": request.wallet_address, "auth_token": "generated_jwt_here"}
 
 @app.post("/posts", response_model=Post)
 async def create_post(post: PostCreate):
