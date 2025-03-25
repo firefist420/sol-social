@@ -1,15 +1,16 @@
 from fastapi import FastAPI, HTTPException, status
 from pydantic import BaseModel
 from solana.rpc.api import Client
-from solana.publickey import PublicKey
-from solana.message import Message
-from solana.transaction import Transaction
+from solders.pubkey import Pubkey
+from solders.message import Message
+from solders.transaction import Transaction
 from dotenv import load_dotenv
 import os
 import logging
 from fastapi.middleware.cors import CORSMiddleware
-from typing import List
+from typing import List, Optional
 import json
+from datetime import datetime
 
 load_dotenv()
 SOLANA_RPC_URL = os.getenv("SOLANA_RPC_URL")
@@ -55,18 +56,19 @@ class Post(BaseModel):
     wallet_address: str
     likes: int = 0
     liked_by: List[str] = []
+    created_at: Optional[datetime] = None
 
 posts_db = []
 current_id = 0
 
 def verify_signed_message(wallet_address: str, message: str, signed_message: List[int]) -> bool:
     try:
-        public_key = PublicKey(wallet_address)
+        public_key = Pubkey.from_string(wallet_address)
         signature_bytes = bytes(signed_message)
-        message_obj = Message(bytes(message, 'utf-8'))
-        transaction = Transaction()
+        message_obj = Message.new(bytes(message, 'utf-8'))
+        transaction = Transaction.new_unsigned(message_obj)
         transaction.add_signature(public_key, signature_bytes)
-        return transaction.verify(message_obj)
+        return transaction.verify()
     except Exception as e:
         logger.error(f"Signature verification failed: {str(e)}")
         return False
@@ -95,7 +97,8 @@ async def create_post(post: PostCreate):
         id=current_id,
         content=post.content,
         author=post.author,
-        wallet_address=post.wallet_address
+        wallet_address=post.wallet_address,
+        created_at=datetime.now()
     )
     posts_db.append(new_post)
     current_id += 1
@@ -103,7 +106,7 @@ async def create_post(post: PostCreate):
 
 @app.get("/posts", response_model=List[Post])
 async def get_posts():
-    return posts_db
+    return sorted(posts_db, key=lambda x: x.created_at, reverse=True)
 
 @app.post("/posts/{post_id}/like", response_model=Post)
 async def like_post(post_id: int, wallet_address: str):
