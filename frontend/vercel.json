@@ -1,4 +1,4 @@
-echo '{
+{
   "version": 2,
   "builds": [
     {
@@ -12,4 +12,4 @@ echo '{
       "dest": "sol_front.py"
     }
   ]
-}' > vercel.json
+}
