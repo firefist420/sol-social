@@ -1,5 +1,4 @@
-﻿# -*- coding: utf-8 -*-
-from fastapi import FastAPI, HTTPException, Request
+﻿from fastapi import FastAPI, HTTPException, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, validator
 from solana.rpc.api import Client
@@ -7,16 +6,19 @@ from solders.pubkey import Pubkey
 from solders.message import Message
 import os
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import List
 import databases
 import sqlalchemy
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 from fastapi.responses import JSONResponse
+from fastapi.security import HTTPBearer
+from jose import jwt
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
 
-app = FastAPI()
-
+app = FastAPI(root_path="/api")
 limiter = Limiter(key_func=get_remote_address)
 app.state.limiter = limiter
 
@@ -33,10 +35,13 @@ logger = logging.getLogger(__name__)
 
 SOLANA_RPC_URL = os.getenv("SOLANA_RPC_URL", "https://api.mainnet-beta.solana.com")
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./sqlite.db")
+JWT_SECRET = os.getenv("JWT_SECRET", "secret")
+JWT_ALGORITHM = "HS256"
 
 client = Client(SOLANA_RPC_URL)
 database = databases.Database(DATABASE_URL)
 metadata = sqlalchemy.MetaData()
+security = HTTPBearer()
 
 posts = sqlalchemy.Table(
     "posts",
@@ -117,18 +122,25 @@ def verify_signed_message(wallet_address: str, message: str, signed_message: Lis
         logging.error(f"Verification failed: {str(e)}")
         return False
 
-@app.get("/")
-async def home():
-    return {"status": "running"}
+@app.get("/api/")
+async def api_root():
+    return {"message": "SolSocial API is running"}
 
-@app.post("/auth/wallet", response_model=AuthResponse)
+@app.post("/api/auth/wallet", response_model=AuthResponse)
 @limiter.limit("5/minute")
 async def wallet_auth(request: Request, auth_request: WalletAuthRequest):
     if not verify_signed_message(auth_request.wallet_address, auth_request.message, auth_request.signed_message):
         raise HTTPException(status_code=401, detail="Wallet verification failed")
-    return {"success": True, "user_id": auth_request.wallet_address}
+    
+    token_data = {
+        "sub": auth_request.wallet_address,
+        "exp": datetime.utcnow() + timedelta(days=7)
+    }
+    token = jwt.encode(token_data, JWT_SECRET, algorithm=JWT_ALGORITHM)
+    
+    return {"success": True, "user_id": auth_request.wallet_address, "auth_token": token}
 
-@app.post("/posts", response_model=Post)
+@app.post("/api/posts", response_model=Post)
 @limiter.limit("5/minute")
 async def create_post(request: Request, post: PostCreate):
     query = posts.insert().values(
@@ -142,12 +154,12 @@ async def create_post(request: Request, post: PostCreate):
     record_id = await database.execute(query)
     return {**post.dict(), "id": record_id, "likes": 0, "liked_by": [], "created_at": datetime.now()}
 
-@app.get("/posts", response_model=List[Post])
+@app.get("/api/posts", response_model=List[Post])
 async def get_posts():
     query = posts.select().order_by(posts.c.created_at.desc())
     return await database.fetch_all(query)
 
-@app.post("/posts/{post_id}/like", response_model=Post)
+@app.post("/api/posts/{post_id}/like", response_model=Post)
 async def like_post(post_id: int, wallet_address: str):
     query = posts.select().where(posts.c.id == post_id)
     post = await database.fetch_one(query)
@@ -173,6 +185,6 @@ async def like_post(post_id: int, wallet_address: str):
     
     return {**post, "likes": new_likes, "liked_by": liked_by}
 
-@app.get("/health")
+@app.get("/api/health")
 async def health_check():
     return {"status": "healthy"}

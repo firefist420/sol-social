@@ -1,5 +1,4 @@
-﻿# -*- coding: utf-8 -*-
-import streamlit as st
+﻿import streamlit as st
 import requests
 import sqlite3
 import json
@@ -7,7 +6,8 @@ import os
 from dotenv import load_dotenv
 
 load_dotenv()
-BACKEND_URL = os.getenv("BACKEND_URL", "https://sol-social-backend.onrender.com")
+BASE_URL = os.getenv("BASE_URL", "")
+BACKEND_URL = os.getenv("BACKEND_URL", f"{BASE_URL}/api")
 
 if "user_id" not in st.session_state:
     st.session_state.update({
@@ -65,7 +65,7 @@ def wallet_connector_script():
         try {
             const response = await window.solana.connect();
             const publicKey = response.publicKey.toString();
-            const message = "Welcome to SolSocial!";
+            const message = `SolSocial Auth ${Date.now()}`;
             const signedMessage = await window.solana.signMessage(new TextEncoder().encode(message));
             window.parent.postMessage({
                 type: "walletConnected",
@@ -196,3 +196,7 @@ window.addEventListener("message", (e) => {
 });
 </script>
 """, unsafe_allow_html=True)
+
+@app.get("/health")
+async def health_check():
+    return {"status": "ok"}
