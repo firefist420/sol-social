@@ -23,7 +23,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 SOLANA_RPC_URL = os.getenv("SOLANA_RPC_URL", "https://api.mainnet-beta.solana.com")
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./sqlite.db")
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://user:pass@host:5432/db")
 JWT_SECRET = os.getenv("JWT_SECRET", "secret")
 JWT_ALGORITHM = "HS256"
 
