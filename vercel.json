@@ -2,10 +2,6 @@
   "version": 2,
   "builds": [
     {
-      "src": "backend.py",
-      "use": "@vercel/python"
-    },
-    {
       "src": "sol_front.py",
       "use": "@vercel/python"
     }
@@ -13,7 +9,7 @@
   "routes": [
     {
       "src": "/api/(.*)",
-      "dest": "backend.py"
+      "dest": "https://sol-social-backend.onrender.com/api/$1"
     },
     {
       "src": "/(.*)",
