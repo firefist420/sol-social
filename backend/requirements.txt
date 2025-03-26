@@ -8,3 +8,4 @@ slowapi
 pydantic>=1.10.0
 httpx
 solders
+python-jose[cryptography]
