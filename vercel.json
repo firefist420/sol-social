@@ -1,33 +1,12 @@
-{
-  "version": 2,
-  "builds": [
-    {
-      "src": "sol_front.py",
-      "use": "@vercel/python",
-      "config": {
-        "maxLambdaSize": "512mb"
-      }
-    }
-  ],
-  "routes": [
-    {
-      "src": "/api/(.*)",
-      "dest": "https://sol-social-backend.onrender.com/api/$1",
-      "headers": {
-        "Access-Control-Allow-Origin": "*"
-      }
-    },
-    {
-      "src": "/(.*)",
-      "dest": "sol_front.py",
-      "methods": ["GET", "POST"]
-    }
-  ],
-  "functions": {
-    "sol_front.py": {
-      "memory": 512,
-      "maxDuration": 30,
-      "includeFiles": "assets/**"
-    }
-  }
-}
+{ 
+  "version": 2, 
+  "builds": [ 
+    { 
+      "src": "sol_front.py", 
+      "use": "@vercel/python", 
+      "config": { 
+        "maxLambdaSize": "512mb" 
+      } 
+    } 
+  ] 
+} 
