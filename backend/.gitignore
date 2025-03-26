@@ -1,0 +1,45 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyc
+.python-version
+.venv/
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+*.egg-info/
+*.egg
+dist/
+build/
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+db/
+migrations/
+
+# Environment
+.env
+.env.*
+.secrets
+credentials.json
+
+# IDE & Editor
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Frontend
+assets/
+node_modules/
+.cache/
+dist/
+
+# Solana
+target/
+*.key
