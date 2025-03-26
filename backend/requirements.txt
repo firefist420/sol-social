@@ -1,6 +1,7 @@
-fastapi
-uvicorn
-python-dotenv
-solana
-requests
-solders
+fastapi==0.95.2
+uvicorn==0.22.0
+python-dotenv==1.0.0
+solana==0.29.0
+databases[sqlite]==0.7.0
+sqlalchemy==2.0.15
+slowapi==0.1.7
