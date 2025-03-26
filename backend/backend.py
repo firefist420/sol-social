@@ -19,6 +19,12 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 app = FastAPI(root_path="/api")
+
+@app.head("/")
+@app.get("/")
+async def root():
+    return {"status": "SolSocial API is running"}
+
 limiter = Limiter(key_func=get_remote_address)
 app.state.limiter = limiter
 
