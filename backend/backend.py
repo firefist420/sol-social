@@ -1,4 +1,6 @@
-﻿from fastapi import FastAPI, HTTPException, Request, Depends
+﻿# -*- coding: utf-8 -*-
+
+from fastapi import FastAPI, HTTPException, Request, Depends, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, validator
 from solana.rpc.api import Client
@@ -7,34 +9,15 @@ from solders.message import Message
 import os
 import logging
 from datetime import datetime, timedelta
-from typing import List
+from typing import List, Optional
 import databases
 import sqlalchemy
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 from fastapi.responses import JSONResponse
-from fastapi.security import HTTPBearer
-from jose import jwt
-from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
-
-app = FastAPI(root_path="/api")
-
-@app.head("/")
-@app.get("/")
-async def root():
-    return {"status": "SolSocial API is running"}
-
-limiter = Limiter(key_func=get_remote_address)
-app.state.limiter = limiter
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-    max_age=600
-)
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from jose import jwt, JWTError
+from contextlib import asynccontextmanager
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -93,13 +76,29 @@ class Post(PostCreate):
     liked_by: List[str] = []
     created_at: datetime = datetime.now()
 
-@app.on_event("startup")
-async def startup():
+@asynccontextmanager
+async def lifespan(app: FastAPI):
     await database.connect()
-
-@app.on_event("shutdown")
-async def shutdown():
+    yield
     await database.disconnect()
+
+app = FastAPI(root_path="/api", lifespan=lifespan)
+
+@app.head("/")
+@app.get("/")
+async def root():
+    return {"status": "SolSocial API is running"}
+
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+    max_age=600
+)
 
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request, exc):
@@ -118,7 +117,6 @@ async def log_requests(request: Request, call_next):
 def verify_signed_message(wallet_address: str, message: str, signed_message: List[int]) -> bool:
     if "SolSocial Auth" not in message:
         return False
-        
     try:
         public_key = Pubkey.from_string(wallet_address)
         signature_bytes = bytes(signed_message)
@@ -137,13 +135,11 @@ async def api_root():
 async def wallet_auth(request: Request, auth_request: WalletAuthRequest):
     if not verify_signed_message(auth_request.wallet_address, auth_request.message, auth_request.signed_message):
         raise HTTPException(status_code=401, detail="Wallet verification failed")
-    
     token_data = {
         "sub": auth_request.wallet_address,
         "exp": datetime.utcnow() + timedelta(days=7)
     }
     token = jwt.encode(token_data, JWT_SECRET, algorithm=JWT_ALGORITHM)
-    
     return {"success": True, "user_id": auth_request.wallet_address, "auth_token": token}
 
 @app.post("/api/posts", response_model=Post)
@@ -169,26 +165,21 @@ async def get_posts():
 async def like_post(post_id: int, wallet_address: str):
     query = posts.select().where(posts.c.id == post_id)
     post = await database.fetch_one(query)
-    
     if not post:
         raise HTTPException(status_code=404, detail="Post not found")
-    
     liked_by = post["liked_by"] or []
-    
     if wallet_address not in liked_by:
         liked_by.append(wallet_address)
         new_likes = post["likes"] + 1
     else:
         liked_by.remove(wallet_address)
         new_likes = post["likes"] - 1
-    
     update_query = (
         posts.update()
         .where(posts.c.id == post_id)
         .values(likes=new_likes, liked_by=liked_by)
     )
     await database.execute(update_query)
-    
     return {**post, "likes": new_likes, "liked_by": liked_by}
 
 @app.get("/api/health")

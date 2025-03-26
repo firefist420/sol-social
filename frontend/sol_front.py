@@ -1,4 +1,6 @@
-﻿import streamlit as st
+﻿# -*- coding: utf-8 -*-
+
+import streamlit as st
 import requests
 import sqlite3
 import json
@@ -196,7 +198,3 @@ window.addEventListener("message", (e) => {
 });
 </script>
 """, unsafe_allow_html=True)
-
-@app.get("/health")
-async def health_check():
-    return {"status": "ok"}
