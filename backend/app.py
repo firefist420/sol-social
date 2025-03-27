@@ -163,3 +163,7 @@ async def like_post(post_id: int, wallet: str = Depends(get_current_user)):
         .where(posts.c.id == post_id)
         .values(likes=new_likes, liked_by=liked_by))
     return {**post, "likes": new_likes, "liked_by": liked_by}
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("backend.app:app", host="0.0.0.0", port=8000)
