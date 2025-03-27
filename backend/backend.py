@@ -37,7 +37,7 @@ class Settings(BaseSettings):
 settings = Settings()
 
 client = Client(settings.solana_rpc_url)
-database = databases.Database(settings.database_url, min_size=5, max_size=20)
+database = databases.Database(DATABASE_URL, min_size=5, max_size=20)
 metadata = sqlalchemy.MetaData()
 security = HTTPBearer()
 
