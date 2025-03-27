@@ -5,17 +5,18 @@
       "src": "sol_front.py",
       "use": "@vercel/python",
       "config": {
-        "runtime": "python3.11",
+        "runtime": "python3.9",
         "maxLambdaSize": "15mb",
-        "memory": 512,
-        "installCommand": "pip install httpx==0.27.0 python-dotenv==1.0.0 --no-deps --system --target=/tmp/python"
+        "includeFiles": ["solsocial.db"],
+        "installCommand": "pip install -r requirements_vercel.txt"
       }
     }
   ],
   "routes": [
     {
       "src": "/(.*)",
-      "dest": "sol_front.py"
+      "dest": "sol_front.py",
+      "methods": ["GET", "POST"]
     }
   ]
 }
