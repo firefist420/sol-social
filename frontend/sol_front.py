@@ -3,13 +3,12 @@
 import streamlit as st
 import httpx
 import sqlite3
-import json
 import os
 from dotenv import load_dotenv
 import streamlit.web.bootstrap
 
 load_dotenv()
-BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
+BACKEND_URL = os.getenv("BACKEND_URL", "https://your-render-app.onrender.com")
 
 if "user_data" not in st.session_state:
     st.session_state.update({
@@ -133,9 +132,10 @@ def signup_form():
 
 async def fetch_posts():
     try:
-        async with httpx.AsyncClient() as client:
-            r = await client.get(f"{BACKEND_URL}/posts")
-            return r.json() if r.status_code == 200 else []
+        with st.spinner('Loading posts...'):
+            async with httpx.AsyncClient() as client:
+                r = await client.get(f"{BACKEND_URL}/posts")
+                return r.json() if r.status_code == 200 else []
     except Exception:
         return []
 

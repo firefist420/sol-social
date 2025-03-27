@@ -1,0 +1,29 @@
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "sol_front.py",
+      "use": "@vercel/python",
+      "config": {
+        "runtime": "python3.11",
+        "maxLambdaSize": "15mb",
+        "memory": 512,
+        "installCommand": "pip install -r requirements_vercel.txt --target .venv",
+        "startCommand": "streamlit run sol_front.py --server.port=$PORT --server.headless=true --server.enableCORS=false --browser.gatherUsageStats=false"
+      }
+    }
+  ],
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "sol_front.py",
+      "headers": {
+        "Cache-Control": "no-store, max-age=0"
+      }
+    }
+  ],
+  "regions": ["iad1"],
+  "env": {
+    "BACKEND_URL": "https://your-render-app.onrender.com"
+  }
+}

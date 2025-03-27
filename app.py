@@ -1,8 +1,7 @@
 ﻿# -*- coding: utf-8 -*-
-
 from fastapi import FastAPI, HTTPException, Request, Depends, status
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, validator
 from solana.rpc.api import Client
 from solders.pubkey import Pubkey
 from solders.message import Message
@@ -59,6 +58,14 @@ class WalletAuthRequest(BaseModel):
     wallet_address: str
     signed_message: List[int]
     message: str
+
+    @validator('wallet_address')
+    def validate_wallet_address(cls, v):
+        try:
+            Pubkey.from_string(v)
+            return v
+        except:
+            raise ValueError('Invalid Solana wallet address')
 
 class AuthResponse(BaseModel):
     success: bool
@@ -191,7 +198,3 @@ async def like_post(post_id: int, wallet: str = Depends(get_current_user), db: A
         "liked_by": liked_by,
         "created_at": post.created_at
     }
-
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run("app:app", host="0.0.0.0", port=8000)
