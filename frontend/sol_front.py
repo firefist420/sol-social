@@ -20,7 +20,7 @@ if "user_data" not in st.session_state:
             "auth_token": None
         },
         "wallet_connected": False,
-        "captcha_verified": False
+        "hcaptcha_token": None
     })
 
 def init_db():
@@ -53,23 +53,19 @@ set_background()
 def show_captcha():
     components.html(f"""
     <script src="https://js.hcaptcha.com/1/api.js" async defer></script>
-    <div class="h-captcha" data-sitekey="{HCAPTCHA_SITEKEY}"></div>
+    <div class="h-captcha" data-sitekey="{HCAPTCHA_SITEKEY}" data-callback="onCaptchaSubmit"></div>
     <script>
-    function onCaptchaVerified(token) {{
-        window.parent.postMessage({{
-            type: "streamlit:setComponentValue",
-            value: {{
-                captcha_verified: true,
-                captcha_token: token
-            }}
-        }}, "*");
-    }}
-    hcaptcha.onSuccess = onCaptchaVerified;
+    function onCaptchaSubmit(token) {
+        window.parent.postMessage({
+            type: "hcaptcha_verified",
+            token: token
+        }, "*");
+    }
     </script>
     """, height=100)
 
 def wallet_connector():
-    if not st.session_state.get("captcha_verified"):
+    if not st.session_state.get("hcaptcha_token"):
         show_captcha()
         return
     
@@ -122,7 +118,7 @@ def wallet_connector():
     </button>
     """, unsafe_allow_html=True)
 
-async def auth_wallet(wallet, sig, msg, captcha_token):
+async def auth_wallet(wallet, sig, msg, hcaptcha_token):
     try:
         async with httpx.AsyncClient() as client:
             r = await client.post(
@@ -131,43 +127,32 @@ async def auth_wallet(wallet, sig, msg, captcha_token):
                     "wallet_address": wallet,
                     "signed_message": sig,
                     "message": msg,
-                    "captcha_token": captcha_token
+                    "hcaptcha_token": hcaptcha_token
                 }
             )
             if r.status_code == 200:
                 data = r.json()
                 st.session_state.user_data = {
-                    "user_id": data["user_id"],
+                    "user_id": data.get("user_id", wallet),
                     "wallet_address": wallet,
-                    "auth_token": data["auth_token"]
+                    "auth_token": data.get("auth_token")
                 }
                 with sqlite3.connect("solsocial.db") as conn:
                     conn.execute(
                         "INSERT OR REPLACE INTO users VALUES (?, ?, ?)",
-                        (wallet, data["user_id"], data["auth_token"])
+                        (wallet, st.session_state.user_data["user_id"], st.session_state.user_data["auth_token"])
                     )
                 return True
     except Exception:
         return False
 
-def signup_form():
-    username = st.text_input("Choose username:")
-    if st.button("Sign Up"):
-        st.session_state.user_data["user_id"] = username or st.session_state.user_data["wallet_address"]
-        st.rerun()
-
 async def fetch_posts():
     try:
-        with st.spinner('Loading posts...'):
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                r = await client.get(f"{BACKEND_URL}/posts")
-                r.raise_for_status()
-                return r.json()
-    except httpx.HTTPStatusError as e:
-        st.error(f"Server error: {e.response.status_code}")
-    except httpx.RequestError as e:
-        st.error("Network error - please try again later")
-    return []
+        async with httpx.AsyncClient() as client:
+            r = await client.get(f"{BACKEND_URL}/posts")
+            return r.json() if r.status_code == 200 else []
+    except Exception:
+        return []
 
 async def submit_post(content, author):
     try:
@@ -234,9 +219,9 @@ else:
                 st.session_state["wallet_address"],
                 st.session_state["signed_message"],
                 st.session_state["message"],
-                st.session_state.get("captcha_token", "")
+                st.session_state["hcaptcha_token"]
             ):
-                signup_form()
+                st.rerun()
             else:
                 st.error("Auth failed")
 
@@ -254,12 +239,11 @@ window.addEventListener("message", (e) => {
             }
         }, "*");
     }
-    if (e.data.type === "streamlit:setComponentValue" && e.data.value.captcha_verified) {
+    if (e.data.type === "hcaptcha_verified") {
         window.parent.postMessage({
             type: "streamlit:setComponentValue",
             value: {
-                captcha_verified: true,
-                captcha_token: e.data.value.captcha_token
+                hcaptcha_token: e.data.token
             }
         }, "*");
     }
