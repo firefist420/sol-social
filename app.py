@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 from typing import List
 from pydantic import BaseModel, validator
 import logging
+from fastapi.middleware.cors import CORSMiddleware
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -23,6 +24,18 @@ class Settings:
 settings = Settings()
 
 app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.cors_origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+@app.get("/")
+async def root():
+    return {"status": "SolSocial API running"}
 
 async def verify_hcaptcha(token: str):
     try:

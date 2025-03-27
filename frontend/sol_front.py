@@ -7,8 +7,10 @@ import streamlit.web.bootstrap
 import streamlit.components.v1 as components
 
 load_dotenv()
-BACKEND_URL = os.getenv("BACKEND_URL")
+BACKEND_URL = os.getenv("BACKEND_URL", "https://your-render-app.onrender.com")
 HCAPTCHA_SITEKEY = os.getenv("HCAPTCHA_SITEKEY")
+
+st.set_page_config(page_title="SolSocial", layout="wide")
 
 if "user_data" not in st.session_state:
     st.session_state.update({
@@ -18,7 +20,8 @@ if "user_data" not in st.session_state:
             "auth_token": None
         },
         "wallet_connected": False,
-        "hcaptcha_token": None
+        "hcaptcha_token": None,
+        "backend_checked": False
     })
 
 def init_db():
@@ -44,6 +47,14 @@ def set_background():
     """, unsafe_allow_html=True)
 
 set_background()
+
+async def check_backend():
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(f"{BACKEND_URL}/")
+            return response.status_code == 200
+    except Exception:
+        return False
 
 def show_captcha():
     components.html(f"""
@@ -174,6 +185,12 @@ async def render_feed():
         with st.container(border=True):
             st.write(f"**{post['author']}**")
             st.write(post['content'])
+
+if not st.session_state.get('backend_checked'):
+    if not await check_backend():
+        st.error("Backend service unavailable")
+        st.stop()
+    st.session_state.backend_checked = True
 
 if st.session_state.user_data["user_id"]:
     st.sidebar.write(f"User: {st.session_state.user_data['user_id']}")
