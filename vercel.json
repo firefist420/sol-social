@@ -5,7 +5,8 @@
     "use": "@vercel/python",
     "config": {
       "runtime": "python3.11",
-      "maxLambdaSize": "50mb"
+      "maxLambdaSize": "50mb",
+      "installCommand": "pip install -r requirements.txt"
     }
   }],
   "routes": [{
