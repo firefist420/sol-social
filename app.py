@@ -1,6 +1,4 @@
-﻿# -*- coding: utf-8 -*-
-
-from fastapi import FastAPI, HTTPException, Request, Depends, status, Form
+﻿from fastapi import FastAPI, HTTPException, Request, Depends, status, Form
 import httpx
 from solana.rpc.api import Client
 from solders.pubkey import Pubkey
@@ -24,22 +22,19 @@ class Settings:
 
 settings = Settings()
 
+app = FastAPI()
+
 async def verify_hcaptcha(token: str):
     try:
         async with httpx.AsyncClient() as client:
             response = await client.post(
                 "https://hcaptcha.com/siteverify",
-                data={
-                    "secret": settings.hcaptcha_secret,
-                    "response": token
-                }
+                data={"secret": settings.hcaptcha_secret, "response": token}
             )
             return response.json()
     except Exception as e:
         logger.error(f"hCaptcha verification failed: {e}")
         return {"success": False}
-
-app = FastAPI()
 
 @app.post("/verify-captcha")
 async def verify_captcha(token: str = Form(...)):

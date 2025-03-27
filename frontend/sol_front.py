@@ -1,6 +1,4 @@
-﻿# -*- coding: utf-8 -*-
-
-import streamlit as st
+﻿import streamlit as st
 import httpx
 import sqlite3
 import os
@@ -41,9 +39,6 @@ def set_background():
     .stApp {
         background-image: url('https://i.ibb.co/YBngK5s6/background-jpg.jpg');
         background-size: cover;
-        background-position: center;
-        background-repeat: no-repeat;
-        background-attachment: fixed;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -55,12 +50,12 @@ def show_captcha():
     <script src="https://js.hcaptcha.com/1/api.js" async defer></script>
     <div class="h-captcha" data-sitekey="{HCAPTCHA_SITEKEY}" data-callback="onCaptchaSubmit"></div>
     <script>
-    function onCaptchaSubmit(token) {
-        window.parent.postMessage({
+    function onCaptchaSubmit(token) {{
+        window.parent.postMessage({{
             type: "hcaptcha_verified",
             token: token
-        }, "*");
-    }
+        }}, "*");
+    }}
     </script>
     """, height=100)
 
@@ -72,27 +67,31 @@ def wallet_connector():
     st.markdown("""
     <script src="https://unpkg.com/@solana/web3.js@latest/lib/index.iife.min.js"></script>
     <script>
-    async function connectWallet() {
+    async function connectWallet() {{
         if (!window.solana?.isPhantom) return alert("Phantom not found");
-        try {
+        try {{
             const response = await window.solana.connect();
             const publicKey = response.publicKey.toString();
-            const message = `SolSocial Auth ${Date.now()}`;
+            const message = `SolSocial Auth ${{Date.now()}}`;
             const signedMessage = await window.solana.signMessage(new TextEncoder().encode(message));
-            window.parent.postMessage({
+            window.parent.postMessage({{
                 type: "walletConnected",
                 publicKey: publicKey,
                 signedMessage: Array.from(signedMessage.signature),
                 message: message
-            }, "*");
-        } catch (error) {
+            }}, "*");
+        }} catch (error) {{
             console.error(error);
-        }
-    }
+        }}
+    }}
     document.getElementById("connect-button").addEventListener("click", connectWallet);
     </script>
+    <button id="connect-button" class="connect-button">
+        <img src="https://phantom.app/favicon.ico" width="20">
+        Connect Wallet
+    </button>
     <style>
-    .connect-button {
+    .connect-button {{
         background-color: purple;
         color: white;
         border: none;
@@ -104,18 +103,8 @@ def wallet_connector():
         top: 20px;
         left: 20px;
         z-index: 1;
-        box-shadow: 0 4px 8px rgba(0,0,0,0.2);
-        transition: all 0.3s ease;
-    }
-    .connect-button:hover {
-        background-color: #6a0dad;
-        transform: scale(1.05);
-    }
+    }}
     </style>
-    <button id="connect-button" class="connect-button">
-        <img src="https://phantom.app/favicon.ico" width="20" style="vertical-align:middle; margin-right:8px;">
-        Connect Wallet
-    </button>
     """, unsafe_allow_html=True)
 
 async def auth_wallet(wallet, sig, msg, hcaptcha_token):
@@ -170,17 +159,6 @@ async def submit_post(content, author):
     except Exception:
         return False
 
-async def handle_like(post_id):
-    try:
-        async with httpx.AsyncClient() as client:
-            r = await client.post(
-                f"{BACKEND_URL}/posts/{post_id}/like",
-                headers={"Authorization": f"Bearer {st.session_state.user_data['auth_token']}"}
-            )
-            return r.status_code == 200
-    except Exception:
-        return False
-
 async def render_feed():
     st.title("Home")
     st.write(f"Welcome, {st.session_state.user_data['user_id']}")
@@ -190,20 +168,12 @@ async def render_feed():
         if st.form_submit_button("Post") and content:
             if await submit_post(content, st.session_state.user_data["user_id"]):
                 st.rerun()
-            else:
-                st.error("Posting failed")
 
     posts = await fetch_posts()
     for post in posts:
         with st.container(border=True):
             st.write(f"**{post['author']}**")
             st.write(post['content'])
-            liked = st.session_state.user_data["wallet_address"] in post.get('liked_by', [])
-            if st.button(f"{'❤️' if liked else '♡'} {post.get('likes',0)}", key=f"like_{post['id']}"):
-                if await handle_like(post['id']):
-                    st.rerun()
-                else:
-                    st.error("Like failed")
 
 if st.session_state.user_data["user_id"]:
     st.sidebar.write(f"User: {st.session_state.user_data['user_id']}")
@@ -222,8 +192,6 @@ else:
                 st.session_state["hcaptcha_token"]
             ):
                 st.rerun()
-            else:
-                st.error("Auth failed")
 
 st.markdown("""
 <script>
