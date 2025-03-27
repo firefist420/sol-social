@@ -11,7 +11,9 @@ import time
 import logging
 from datetime import datetime, timedelta
 from typing import List
-import databases
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy import select, update, insert
 import sqlalchemy
 from slowapi import Limiter
 from slowapi.util import get_remote_address
@@ -19,7 +21,6 @@ from fastapi.responses import JSONResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import jwt, JWTError
 from contextlib import asynccontextmanager
-from sqlalchemy.exc import SQLAlchemyError
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -37,7 +38,8 @@ class Settings:
 
 settings = Settings()
 client = Client(settings.solana_rpc_url)
-database = databases.Database(settings.database_url)
+engine = create_async_engine(settings.database_url)
+async_session = sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
 metadata = sqlalchemy.MetaData()
 security = HTTPBearer()
 
@@ -52,9 +54,6 @@ posts = sqlalchemy.Table(
     sqlalchemy.Column("liked_by", sqlalchemy.JSON),
     sqlalchemy.Column("created_at", sqlalchemy.DateTime, index=True)
 )
-
-engine = sqlalchemy.create_engine(settings.database_url)
-metadata.create_all(engine)
 
 class WalletAuthRequest(BaseModel):
     wallet_address: str
@@ -79,16 +78,10 @@ class Post(PostCreate):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    retries = 5
-    while retries > 0:
-        try:
-            await database.connect()
-            break
-        except Exception:
-            retries -= 1
-            time.sleep(2)
+    async with engine.begin() as conn:
+        await conn.run_sync(metadata.create_all)
     yield
-    await database.disconnect()
+    await engine.dispose()
 
 app = FastAPI(lifespan=lifespan)
 limiter = Limiter(key_func=get_remote_address)
@@ -96,12 +89,15 @@ app.state.limiter = limiter
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://solsocial.social", "https://*.vercel.app"],
-    allow_credentials=True,
+    allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
     max_age=600
 )
+
+async def get_db():
+    async with async_session() as session:
+        yield session
 
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
@@ -111,7 +107,7 @@ async def log_requests(request: Request, call_next):
     logger.info(f"{request.method} {request.url} {response.status_code} {process_time:.2f}s")
     return response
 
-async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
+async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security), db: AsyncSession = Depends(get_db)):
     try:
         token = credentials.credentials
         payload = jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_algorithm])
@@ -144,34 +140,42 @@ async def wallet_auth(request: Request, auth: WalletAuthRequest):
 
 @app.post("/posts", response_model=Post)
 @limiter.limit("5/minute")
-async def create_post(request: Request, post: PostCreate, wallet: str = Depends(get_current_user)):
+async def create_post(request: Request, post: PostCreate, wallet: str = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     if wallet != post.wallet_address:
         raise HTTPException(status_code=403, detail="Unauthorized")
-    post_id = await database.execute(posts.insert().values(
-        content=post.content,
-        author=post.author,
-        wallet_address=post.wallet_address,
-        likes=0,
-        liked_by=[],
-        created_at=datetime.now()
-    ))
-    return {**post.dict(), "id": post_id, "likes": 0, "liked_by": []}
+    result = await db.execute(
+        insert(posts).values(
+            content=post.content,
+            author=post.author,
+            wallet_address=post.wallet_address,
+            likes=0,
+            liked_by=[],
+            created_at=datetime.now()
+        ).returning(posts)
+    await db.commit()
+    post_data = result.first()
+    return {**post.dict(), "id": post_data.id, "likes": 0, "liked_by": []}
 
 @app.get("/posts", response_model=List[Post])
-async def get_posts():
-    return await database.fetch_all(posts.select().order_by(posts.c.created_at.desc()))
+async def get_posts(db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(posts).order_by(posts.c.created_at.desc()))
+    return result.scalars().all()
 
 @app.post("/posts/{post_id}/like", response_model=Post)
-async def like_post(post_id: int, wallet: str = Depends(get_current_user)):
-    post = await database.fetch_one(posts.select().where(posts.c.id == post_id))
+async def like_post(post_id: int, wallet: str = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(posts).where(posts.c.id == post_id))
+    post = result.scalar()
     if not post:
         raise HTTPException(status_code=404, detail="Post not found")
-    liked_by = post["liked_by"] or []
-    new_likes = post["likes"] + 1 if wallet not in liked_by else post["likes"] - 1
-    await database.execute(posts.update()
+    liked_by = post.liked_by or []
+    new_likes = post.likes + 1 if wallet not in liked_by else post.likes - 1
+    await db.execute(
+        update(posts)
         .where(posts.c.id == post_id)
-        .values(likes=new_likes, liked_by=liked_by))
-    return {**post, "likes": new_likes, "liked_by": liked_by}
+        .values(likes=new_likes, liked_by=liked_by)
+    )
+    await db.commit()
+    return {**post.__dict__, "likes": new_likes, "liked_by": liked_by}
 
 if __name__ == "__main__":
     import uvicorn
