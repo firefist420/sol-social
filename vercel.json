@@ -8,15 +8,11 @@
         "runtime": "python3.11",
         "maxLambdaSize": "15mb",
         "memory": 512,
-        "installCommand": "cd frontend && pip install -r requirements_vercel.txt --prefix .. --no-warn-script-location"
+        "installCommand": "pip install --upgrade pip && pip install -r frontend/requirements_vercel.txt --no-deps --prefix ."
       }
     }
   ],
   "routes": [
-    {
-      "src": "/api/(.*)",
-      "dest": "app.py"
-    },
     {
       "src": "/(.*)",
       "dest": "frontend/sol_front.py"

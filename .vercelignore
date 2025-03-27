@@ -3,10 +3,5 @@ __pycache__
 *.pyo
 *.pyd
 .DS_Store
-*.cache
-*.egg-info
-build
-dist
-venv
 .env
 .git
