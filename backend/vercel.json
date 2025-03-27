@@ -2,9 +2,9 @@
   "version": 2,
   "builds": [
     {
-      "src": "backend/backend.py",
+      "src": "backend/app.py",
       "use": "@vercel/python",
-      "config": {
+      "config": { 
         "maxLambdaSize": "50mb",
         "runtime": "python3.11"
       }
@@ -13,12 +13,11 @@
   "routes": [
     {
       "src": "/api/(.*)",
-      "dest": "backend/backend.py"
+      "dest": "backend/app.py"
     },
     {
       "src": "/(.*)",
-      "dest": "backend/backend.py",
-      "methods": ["GET"] 
+      "dest": "backend/app.py"
     }
   ]
 }
