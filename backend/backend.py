@@ -21,28 +21,24 @@ from contextlib import asynccontextmanager
 from pydantic import BaseSettings
 import time
 from dotenv import load_dotenv
-import os
+from sqlalchemy.exc import SQLAlchemyError
 
 load_dotenv()
-DATABASE_URL = os.getenv("DATABASE_URL")
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class Settings(BaseSettings):
     solana_rpc_url: str = "https://api.mainnet-beta.solana.com"
-    database_url: str = "postgresql+asyncpg://user:pass@host:5432/db"
-    jwt_secret: str
+    database_url: str = os.getenv("DATABASE_URL")
+    jwt_secret: str = os.getenv("JWT_SECRET")
     jwt_algorithm: str = "HS256"
     jwt_expire_minutes: int = 10080
-    
-    class Config:
-        env_file = ".env"
 
 settings = Settings()
 
 client = Client(settings.solana_rpc_url)
-database = databases.Database(DATABASE_URL, min_size=5, max_size=20)
+database = databases.Database(settings.database_url, min_size=5, max_size=20)
 metadata = sqlalchemy.MetaData()
 security = HTTPBearer()
 
@@ -146,8 +142,8 @@ async def http_exception_handler(request, exc):
         content={"message": exc.detail},
     )
 
-@app.exception_handler(databases.DatabaseError)
-async def database_exception_handler(request: Request, exc: databases.DatabaseError):
+@app.exception_handler(SQLAlchemyError)
+async def database_exception_handler(request: Request, exc: SQLAlchemyError):
     logger.error(f"Database error: {str(exc)}")
     return JSONResponse(
         status_code=500,
