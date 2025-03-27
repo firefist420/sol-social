@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 class Settings:
     def __init__(self):
         self.solana_rpc_url = "https://api.mainnet-beta.solana.com"
-        self.database_url = os.getenv("DATABASE_URL")
+        self.database_url = os.getenv("DATABASE_URL").replace("postgresql://", "postgresql+asyncpg://")
         self.jwt_secret = os.getenv("JWT_SECRET")
         self.jwt_algorithm = "HS256"
         self.jwt_expire_minutes = 10080
@@ -79,7 +79,14 @@ class Post(PostCreate):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    await database.connect()
+    retries = 5
+    while retries > 0:
+        try:
+            await database.connect()
+            break
+        except Exception:
+            retries -= 1
+            time.sleep(2)
     yield
     await database.disconnect()
 
@@ -89,7 +96,8 @@ app.state.limiter = limiter
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["https://solsocial.social", "https://*.vercel.app"],
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
     max_age=600
@@ -167,4 +175,4 @@ async def like_post(post_id: int, wallet: str = Depends(get_current_user)):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("backend.app:app", host="0.0.0.0", port=8000)
+    uvicorn.run("app:app", host="0.0.0.0", port=8000)

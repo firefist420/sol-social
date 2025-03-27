@@ -6,6 +6,7 @@ import sqlite3
 import json
 import os
 from dotenv import load_dotenv
+import streamlit.web.bootstrap
 
 load_dotenv()
 BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
@@ -225,3 +226,6 @@ window.addEventListener("message", (e) => {
 });
 </script>
 """, unsafe_allow_html=True)
+
+if __name__ == "__main__":
+    streamlit.web.bootstrap.run("sol_front.py", "", [], {})

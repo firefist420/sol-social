@@ -1,17 +1,34 @@
 {
   "version": 2,
-  "builds": [{
-    "src": "app.py",
-    "use": "@vercel/python",
-    "config": {
-      "runtime": "python3.11",
-      "maxLambdaSize": "50mb",
-      "installCommand": "pip install -r requirements.txt",
-      "framework": "fastapi"
+  "builds": [
+    {
+      "src": "app.py",
+      "use": "@vercel/python",
+      "config": {
+        "runtime": "python3.11",
+        "maxLambdaSize": "50mb",
+        "installCommand": "pip install -r requirements.txt",
+        "framework": "fastapi"
+      }
+    },
+    {
+      "src": "sol_front.py",
+      "use": "@vercel/python",
+      "config": {
+        "runtime": "python3.11",
+        "installCommand": "pip install streamlit httpx python-dotenv",
+        "startCommand": "streamlit run sol_front.py --server.port=$PORT"
+      }
     }
-  }],
-  "routes": [{
-    "src": "/(.*)",
-    "dest": "app.py"
-  }]
+  ],
+  "routes": [
+    {
+      "src": "/api/(.*)",
+      "dest": "app.py"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "sol_front.py"
+    }
+  ]
 }
