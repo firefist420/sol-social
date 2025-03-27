@@ -25,7 +25,8 @@ if "user_data" not in st.session_state:
     })
 
 def init_db():
-    with sqlite3.connect("solsocial.db") as conn:
+    db_path = os.path.join(os.path.dirname(__file__), "solsocial.db")
+    with sqlite3.connect(db_path) as conn:
         conn.execute("""
             CREATE TABLE IF NOT EXISTS users (
                 wallet_address TEXT PRIMARY KEY,
@@ -137,7 +138,8 @@ async def auth_wallet(wallet, sig, msg, hcaptcha_token):
                     "wallet_address": wallet,
                     "auth_token": data.get("auth_token")
                 }
-                with sqlite3.connect("solsocial.db") as conn:
+                db_path = os.path.join(os.path.dirname(__file__), "solsocial.db")
+                with sqlite3.connect(db_path) as conn:
                     conn.execute(
                         "INSERT OR REPLACE INTO users VALUES (?, ?, ?)",
                         (wallet, st.session_state.user_data["user_id"], st.session_state.user_data["auth_token"])

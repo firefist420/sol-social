@@ -2,21 +2,20 @@
   "version": 2,
   "builds": [
     {
-      "src": "sol_front.py",
+      "src": "frontend/sol_front.py",
       "use": "@vercel/python",
       "config": {
         "runtime": "python3.9",
         "maxLambdaSize": "15mb",
-        "includeFiles": ["solsocial.db"],
-        "installCommand": "pip install -r requirements_vercel.txt && streamlit config show > config.toml"
+        "installCommand": "pip install -r frontend/requirements_vercel.txt && streamlit config show > frontend/config.toml"
       }
     }
   ],
   "routes": [
     {
-      "src": "/(.*)",
-      "dest": "sol_front.py",
-      "methods": ["GET", "POST", "HEAD"]
+      "src": "/(.*)", 
+      "dest": "frontend/sol_front.py",
+      "methods": ["GET", "POST"]
     }
   ]
 }
