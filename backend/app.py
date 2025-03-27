@@ -2,14 +2,14 @@
 
 from fastapi import FastAPI, HTTPException, Request, Depends, status
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field
 from solana.rpc.api import Client
 from solders.pubkey import Pubkey
 from solders.message import Message
 import os
 import logging
 from datetime import datetime, timedelta
-from typing import List, Optional
+from typing import List
 import databases
 import sqlalchemy
 from slowapi import Limiter
@@ -18,27 +18,25 @@ from fastapi.responses import JSONResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import jwt, JWTError
 from contextlib import asynccontextmanager
-from pydantic import BaseSettings
-import time
-from dotenv import load_dotenv
 from sqlalchemy.exc import SQLAlchemyError
+from dotenv import load_dotenv
 
 load_dotenv()
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-class Settings(BaseSettings):
-    solana_rpc_url: str = "https://api.mainnet-beta.solana.com"
-    database_url: str = os.getenv("DATABASE_URL")
-    jwt_secret: str = os.getenv("JWT_SECRET")
-    jwt_algorithm: str = "HS256"
-    jwt_expire_minutes: int = 10080
+class Settings:
+    def __init__(self):
+        self.solana_rpc_url = "https://api.mainnet-beta.solana.com"
+        self.database_url = os.getenv("DATABASE_URL")
+        self.jwt_secret = os.getenv("JWT_SECRET")
+        self.jwt_algorithm = "HS256"
+        self.jwt_expire_minutes = 10080
 
 settings = Settings()
-
 client = Client(settings.solana_rpc_url)
-database = databases.Database(settings.database_url, min_size=5, max_size=20)
+database = databases.Database(settings.database_url)
 metadata = sqlalchemy.MetaData()
 security = HTTPBearer()
 
@@ -71,14 +69,6 @@ class PostCreate(BaseModel):
     content: str = Field(..., min_length=1, max_length=280)
     author: str = Field(..., min_length=3, max_length=50)
     wallet_address: str
-    
-    @validator('wallet_address')
-    def validate_wallet(cls, v):
-        try:
-            Pubkey.from_string(v)
-            return v
-        except:
-            raise ValueError("Invalid wallet address")
 
 class Post(PostCreate):
     id: int
@@ -92,8 +82,7 @@ async def lifespan(app: FastAPI):
     yield
     await database.disconnect()
 
-app = FastAPI(root_path="/api", lifespan=lifespan)
-
+app = FastAPI(lifespan=lifespan)
 limiter = Limiter(key_func=get_remote_address)
 app.state.limiter = limiter
 
@@ -124,95 +113,53 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
     except JWTError:
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
-def verify_signed_message(wallet_address: str, message: str, signed_message: List[int]) -> bool:
-    if "SolSocial Auth" not in message:
-        return False
-    try:
-        public_key = Pubkey.from_string(wallet_address)
-        signature_bytes = bytes(signed_message)
-        message_obj = Message.new(bytes(message, 'utf-8'))
-        return public_key.verify(message_obj, signature_bytes)
-    except Exception:
-        return False
-
-@app.exception_handler(HTTPException)
-async def http_exception_handler(request, exc):
-    return JSONResponse(
-        status_code=exc.status_code,
-        content={"message": exc.detail},
-    )
-
-@app.exception_handler(SQLAlchemyError)
-async def database_exception_handler(request: Request, exc: SQLAlchemyError):
-    logger.error(f"Database error: {str(exc)}")
-    return JSONResponse(
-        status_code=500,
-        content={"message": "Internal server error"},
-    )
-
-@app.head("/")
 @app.get("/")
 async def root():
-    return {"status": "SolSocial API is running"}
+    return {"status": "API running"}
 
-@app.get("/api/health")
-async def health_check():
+@app.post("/auth/wallet", response_model=AuthResponse)
+@limiter.limit("5/minute")
+async def wallet_auth(request: Request, auth: WalletAuthRequest):
     try:
-        await database.execute("SELECT 1")
-        return {"status": "healthy", "database": "connected"}
+        pubkey = Pubkey.from_string(auth.wallet_address)
+        msg = Message.new(bytes(auth.message, 'utf-8'))
+        if not pubkey.verify(msg, bytes(auth.signed_message)):
+            raise HTTPException(status_code=401, detail="Invalid signature")
+        token = jwt.encode({
+            "sub": auth.wallet_address,
+            "exp": datetime.utcnow() + timedelta(minutes=settings.jwt_expire_minutes)
+        }, settings.jwt_secret, algorithm=settings.jwt_algorithm)
+        return {"success": True, "user_id": auth.wallet_address, "auth_token": token}
     except Exception:
-        return {"status": "unhealthy", "database": "disconnected"}, 503
-
-@app.post("/api/auth/wallet", response_model=AuthResponse)
-@limiter.limit("5/minute")
-async def wallet_auth(request: Request, auth_request: WalletAuthRequest):
-    if not verify_signed_message(auth_request.wallet_address, auth_request.message, auth_request.signed_message):
         raise HTTPException(status_code=401, detail="Wallet verification failed")
-    token_data = {
-        "sub": auth_request.wallet_address,
-        "exp": datetime.utcnow() + timedelta(minutes=settings.jwt_expire_minutes)
-    }
-    token = jwt.encode(token_data, settings.jwt_secret, algorithm=settings.jwt_algorithm)
-    return {"success": True, "user_id": auth_request.wallet_address, "auth_token": token}
 
-@app.post("/api/posts", response_model=Post)
+@app.post("/posts", response_model=Post)
 @limiter.limit("5/minute")
-async def create_post(request: Request, post: PostCreate, wallet_address: str = Depends(get_current_user)):
-    if wallet_address != post.wallet_address:
-        raise HTTPException(status_code=403, detail="Not authorized")
-    query = posts.insert().values(
+async def create_post(request: Request, post: PostCreate, wallet: str = Depends(get_current_user)):
+    if wallet != post.wallet_address:
+        raise HTTPException(status_code=403, detail="Unauthorized")
+    post_id = await database.execute(posts.insert().values(
         content=post.content,
         author=post.author,
         wallet_address=post.wallet_address,
         likes=0,
         liked_by=[],
         created_at=datetime.now()
-    )
-    record_id = await database.execute(query)
-    return {**post.dict(), "id": record_id, "likes": 0, "liked_by": [], "created_at": datetime.now()}
+    ))
+    return {**post.dict(), "id": post_id, "likes": 0, "liked_by": []}
 
-@app.get("/api/posts", response_model=List[Post])
+@app.get("/posts", response_model=List[Post])
 async def get_posts():
-    query = posts.select().order_by(posts.c.created_at.desc())
-    return await database.fetch_all(query)
+    return await database.fetch_all(posts.select().order_by(posts.c.created_at.desc()))
 
-@app.post("/api/posts/{post_id}/like", response_model=Post)
-async def like_post(post_id: int, wallet_address: str = Depends(get_current_user)):
-    query = posts.select().where(posts.c.id == post_id)
-    post = await database.fetch_one(query)
+@app.post("/posts/{post_id}/like", response_model=Post)
+async def like_post(post_id: int, wallet: str = Depends(get_current_user)):
+    post = await database.fetch_one(posts.select().where(posts.c.id == post_id))
     if not post:
         raise HTTPException(status_code=404, detail="Post not found")
     liked_by = post["liked_by"] or []
-    if wallet_address not in liked_by:
-        liked_by.append(wallet_address)
-        new_likes = post["likes"] + 1
-    else:
-        liked_by.remove(wallet_address)
-        new_likes = post["likes"] - 1
-    update_query = (
-        posts.update()
+    new_likes = post["likes"] + 1 if wallet not in liked_by else post["likes"] - 1
+    await database.execute(posts.update()
         .where(posts.c.id == post_id)
-        .values(likes=new_likes, liked_by=liked_by)
-    )
-    await database.execute(update_query)
+        .values(likes=new_likes, liked_by=liked_by))
     return {**post, "likes": new_likes, "liked_by": liked_by}
