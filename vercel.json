@@ -8,7 +8,7 @@
         "runtime": "python3.11",
         "maxLambdaSize": "15mb",
         "memory": 512,
-        "installCommand": "pip install --upgrade pip && pip install -r frontend/requirements_vercel.txt --no-deps --prefix ."
+        "installCommand": "pip install httpx==0.27.0 python-dotenv==1.0.0 --no-deps --system --target=/tmp/python"
       }
     }
   ],
