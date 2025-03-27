@@ -152,6 +152,7 @@ async def create_post(request: Request, post: PostCreate, wallet: str = Depends(
             liked_by=[],
             created_at=datetime.now()
         ).returning(posts)
+    )
     await db.commit()
     post_data = result.first()
     return {**post.dict(), "id": post_data.id, "likes": 0, "liked_by": []}
@@ -168,14 +169,28 @@ async def like_post(post_id: int, wallet: str = Depends(get_current_user), db: A
     if not post:
         raise HTTPException(status_code=404, detail="Post not found")
     liked_by = post.liked_by or []
-    new_likes = post.likes + 1 if wallet not in liked_by else post.likes - 1
-    await db.execute()
+    if wallet not in liked_by:
+        liked_by.append(wallet)
+        new_likes = post.likes + 1
+    else:
+        liked_by.remove(wallet)
+        new_likes = post.likes - 1
+    await db.execute(
         update(posts)
         .where(posts.c.id == post_id)
         .values(likes=new_likes, liked_by=liked_by)
     )
     await db.commit()
-    return {**post.__dict__, "likes": new_likes, "liked_by": liked_by}
+    await db.refresh(post)
+    return {
+        "id": post.id,
+        "content": post.content,
+        "author": post.author,
+        "wallet_address": post.wallet_address,
+        "likes": new_likes,
+        "liked_by": liked_by,
+        "created_at": post.created_at
+    }
 
 if __name__ == "__main__":
     import uvicorn
