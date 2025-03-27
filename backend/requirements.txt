@@ -9,3 +9,7 @@ pydantic>=1.10.0
 httpx
 solders
 python-jose[cryptography]
+databases
+sqlalchemy
+psycopg2-binary
+python-dotenv
