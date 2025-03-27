@@ -8,8 +8,7 @@ import os
 from dotenv import load_dotenv
 
 load_dotenv()
-BASE_URL = os.getenv("BASE_URL", "")
-BACKEND_URL = os.getenv("BACKEND_URL", f"{BASE_URL}/api")
+BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
 
 if "user_data" not in st.session_state:
     st.session_state.update({
@@ -18,18 +17,17 @@ if "user_data" not in st.session_state:
             "wallet_address": "",
             "auth_token": None
         },
-        "wallet_connected": False,
-        "posts": []
+        "wallet_connected": False
     })
 
 def init_db():
     with sqlite3.connect("solsocial.db") as conn:
-        conn.executescript("""
+        conn.execute("""
             CREATE TABLE IF NOT EXISTS users (
                 wallet_address TEXT PRIMARY KEY,
                 username TEXT,
                 auth_token TEXT
-            );
+            )
         """)
 
 init_db()
@@ -49,8 +47,8 @@ def set_background():
 
 set_background()
 
-def wallet_connector_script():
-    return """
+def wallet_connector():
+    st.markdown("""
     <script src="https://unpkg.com/@solana/web3.js@latest/lib/index.iife.min.js"></script>
     <script>
     async function connectWallet() {
@@ -72,12 +70,8 @@ def wallet_connector_script():
     }
     document.getElementById("connect-button").addEventListener("click", connectWallet);
     </script>
-    """
-
-def connect_wallet_button():
-    st.markdown(f"""
     <style>
-    .connect-button {{
+    .connect-button {
         background-color: purple;
         color: white;
         border: none;
@@ -91,41 +85,40 @@ def connect_wallet_button():
         z-index: 1;
         box-shadow: 0 4px 8px rgba(0,0,0,0.2);
         transition: all 0.3s ease;
-    }}
-    .connect-button:hover {{
+    }
+    .connect-button:hover {
         background-color: #6a0dad;
         transform: scale(1.05);
-    }}
+    }
     </style>
     <button id="connect-button" class="connect-button">
         <img src="https://phantom.app/favicon.ico" width="20" style="vertical-align:middle; margin-right:8px;">
         Connect Wallet
     </button>
-    {wallet_connector_script()}
     """, unsafe_allow_html=True)
 
-async def authenticate_wallet(wallet_address, signed_message, message):
+async def auth_wallet(wallet, sig, msg):
     try:
         async with httpx.AsyncClient() as client:
-            response = await client.post(
+            r = await client.post(
                 f"{BACKEND_URL}/auth/wallet",
                 json={
-                    "wallet_address": wallet_address,
-                    "signed_message": signed_message,
-                    "message": message
+                    "wallet_address": wallet,
+                    "signed_message": sig,
+                    "message": msg
                 }
             )
-            if response.status_code == 200:
-                data = response.json()
-                st.session_state["user_data"] = {
+            if r.status_code == 200:
+                data = r.json()
+                st.session_state.user_data = {
                     "user_id": data["user_id"],
-                    "wallet_address": wallet_address,
+                    "wallet_address": wallet,
                     "auth_token": data["auth_token"]
                 }
                 with sqlite3.connect("solsocial.db") as conn:
                     conn.execute(
                         "INSERT OR REPLACE INTO users VALUES (?, ?, ?)",
-                        (wallet_address, data["user_id"], data["auth_token"])
+                        (wallet, data["user_id"], data["auth_token"])
                     )
                 return True
     except Exception:
@@ -134,87 +127,86 @@ async def authenticate_wallet(wallet_address, signed_message, message):
 def signup_form():
     username = st.text_input("Choose username:")
     if st.button("Sign Up"):
-        st.session_state["user_data"]["user_id"] = username or st.session_state["user_data"]["wallet_address"]
+        st.session_state.user_data["user_id"] = username or st.session_state.user_data["wallet_address"]
         st.rerun()
 
-async def get_posts():
+async def fetch_posts():
     try:
         async with httpx.AsyncClient() as client:
-            response = await client.get(f"{BACKEND_URL}/posts")
-            if response.status_code == 200:
-                return response.json()
+            r = await client.get(f"{BACKEND_URL}/posts")
+            return r.json() if r.status_code == 200 else []
     except Exception:
         return []
 
-async def create_post(content, author):
+async def submit_post(content, author):
     try:
         async with httpx.AsyncClient() as client:
-            response = await client.post(
+            r = await client.post(
                 f"{BACKEND_URL}/posts",
                 json={
                     "content": content,
                     "author": author,
-                    "wallet_address": st.session_state["user_data"]["wallet_address"]
+                    "wallet_address": st.session_state.user_data["wallet_address"]
                 },
-                headers={"Authorization": f"Bearer {st.session_state['user_data']['auth_token']}"}
+                headers={"Authorization": f"Bearer {st.session_state.user_data['auth_token']}"}
             )
-            return response.status_code == 200
+            return r.status_code == 200
     except Exception:
         return False
 
-async def like_post(post_id):
+async def handle_like(post_id):
     try:
         async with httpx.AsyncClient() as client:
-            response = await client.post(
+            r = await client.post(
                 f"{BACKEND_URL}/posts/{post_id}/like",
-                headers={"Authorization": f"Bearer {st.session_state['user_data']['auth_token']}"}
+                headers={"Authorization": f"Bearer {st.session_state.user_data['auth_token']}"}
             )
-            return response.status_code == 200
+            return r.status_code == 200
     except Exception:
         return False
 
-async def post_feed():
+async def render_feed():
     st.title("Home")
-    st.write(f"Welcome, {st.session_state['user_data']['user_id']}")
+    st.write(f"Welcome, {st.session_state.user_data['user_id']}")
     
     with st.form("post_form"):
-        post_content = st.text_area("What's on your mind?")
-        if st.form_submit_button("Post") and post_content:
-            if await create_post(post_content, st.session_state['user_data']['user_id']):
+        content = st.text_area("What's on your mind?")
+        if st.form_submit_button("Post") and content:
+            if await submit_post(content, st.session_state.user_data["user_id"]):
                 st.rerun()
             else:
                 st.error("Posting failed")
 
-    posts = await get_posts()
+    posts = await fetch_posts()
     for post in posts:
         with st.container(border=True):
             st.write(f"**{post['author']}**")
             st.write(post['content'])
-            liked = st.session_state['user_data']['wallet_address'] in post.get('liked_by', [])
+            liked = st.session_state.user_data["wallet_address"] in post.get('liked_by', [])
             if st.button(f"{'❤️' if liked else '♡'} {post.get('likes',0)}", key=f"like_{post['id']}"):
-                if await like_post(post['id']):
+                if await handle_like(post['id']):
                     st.rerun()
                 else:
-                    st.error("Like action failed")
+                    st.error("Like failed")
 
-if st.session_state["user_data"]["user_id"]:
-    st.sidebar.write(f"Logged in as: {st.session_state['user_data']['user_id']}")
+if st.session_state.user_data["user_id"]:
+    st.sidebar.write(f"User: {st.session_state.user_data['user_id']}")
     if st.sidebar.button("Logout"):
         st.session_state.clear()
         st.rerun()
-    st.experimental_rerun(post_feed)()
+    st.experimental_rerun(render_feed)()
 else:
-    connect_wallet_button()
+    wallet_connector()
     if st.session_state.get("wallet_connected"):
-        if st.session_state["user_data"]["auth_token"] is None:
-            if st.experimental_rerun(authenticate_wallet)(
+        if st.session_state.user_data["auth_token"] is None:
+            if st.experimental_rerun(auth_wallet)(
                 st.session_state["wallet_address"],
                 st.session_state["signed_message"],
                 st.session_state["message"]
             ):
                 signup_form()
             else:
-                st.error("Authentication failed")
+                st.error("Auth failed")
 
 st.markdown("""
 <script>

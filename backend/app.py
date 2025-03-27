@@ -9,7 +9,7 @@ from solders.message import Message
 import os
 import logging
 from datetime import datetime, timedelta
-from typing import List
+from typing import List, Optional
 import databases
 import sqlalchemy
 from slowapi import Limiter
@@ -18,23 +18,25 @@ from fastapi.responses import JSONResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import jwt, JWTError
 from contextlib import asynccontextmanager
-from sqlalchemy.exc import SQLAlchemyError
+from pydantic import BaseSettings
+import time
 from dotenv import load_dotenv
+from sqlalchemy.exc import SQLAlchemyError
 
 load_dotenv()
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-class Settings:
-    def __init__(self):
-        self.solana_rpc_url = "https://api.mainnet-beta.solana.com"
-        self.database_url = os.getenv("DATABASE_URL")
-        self.jwt_secret = os.getenv("JWT_SECRET")
-        self.jwt_algorithm = "HS256"
-        self.jwt_expire_minutes = 10080
+class Settings(BaseSettings):
+    solana_rpc_url: str = "https://api.mainnet-beta.solana.com"
+    database_url: str = os.getenv("DATABASE_URL")
+    jwt_secret: str = os.getenv("JWT_SECRET")
+    jwt_algorithm: str = "HS256"
+    jwt_expire_minutes: int = 10080
 
 settings = Settings()
+
 client = Client(settings.solana_rpc_url)
 database = databases.Database(settings.database_url, min_size=5, max_size=20)
 metadata = sqlalchemy.MetaData()
@@ -91,6 +93,7 @@ async def lifespan(app: FastAPI):
     await database.disconnect()
 
 app = FastAPI(root_path="/api", lifespan=lifespan)
+
 limiter = Limiter(key_func=get_remote_address)
 app.state.limiter = limiter
 
@@ -147,11 +150,12 @@ async def database_exception_handler(request: Request, exc: SQLAlchemyError):
         content={"message": "Internal server error"},
     )
 
+@app.head("/")
 @app.get("/")
 async def root():
     return {"status": "SolSocial API is running"}
 
-@app.get("/health")
+@app.get("/api/health")
 async def health_check():
     try:
         await database.execute("SELECT 1")
@@ -159,7 +163,7 @@ async def health_check():
     except Exception:
         return {"status": "unhealthy", "database": "disconnected"}, 503
 
-@app.post("/auth/wallet", response_model=AuthResponse)
+@app.post("/api/auth/wallet", response_model=AuthResponse)
 @limiter.limit("5/minute")
 async def wallet_auth(request: Request, auth_request: WalletAuthRequest):
     if not verify_signed_message(auth_request.wallet_address, auth_request.message, auth_request.signed_message):
@@ -171,7 +175,7 @@ async def wallet_auth(request: Request, auth_request: WalletAuthRequest):
     token = jwt.encode(token_data, settings.jwt_secret, algorithm=settings.jwt_algorithm)
     return {"success": True, "user_id": auth_request.wallet_address, "auth_token": token}
 
-@app.post("/posts", response_model=Post)
+@app.post("/api/posts", response_model=Post)
 @limiter.limit("5/minute")
 async def create_post(request: Request, post: PostCreate, wallet_address: str = Depends(get_current_user)):
     if wallet_address != post.wallet_address:
@@ -187,12 +191,12 @@ async def create_post(request: Request, post: PostCreate, wallet_address: str = 
     record_id = await database.execute(query)
     return {**post.dict(), "id": record_id, "likes": 0, "liked_by": [], "created_at": datetime.now()}
 
-@app.get("/posts", response_model=List[Post])
+@app.get("/api/posts", response_model=List[Post])
 async def get_posts():
     query = posts.select().order_by(posts.c.created_at.desc())
     return await database.fetch_all(query)
 
-@app.post("/posts/{post_id}/like", response_model=Post)
+@app.post("/api/posts/{post_id}/like", response_model=Post)
 async def like_post(post_id: int, wallet_address: str = Depends(get_current_user)):
     query = posts.select().where(posts.c.id == post_id)
     post = await database.fetch_one(query)
