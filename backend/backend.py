@@ -18,7 +18,7 @@ from fastapi.responses import JSONResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import jwt, JWTError
 from contextlib import asynccontextmanager
-from pydantic import BaseSettings
+from pydantic.v1 import BaseSettings
 import time
 
 logging.basicConfig(level=logging.INFO)
