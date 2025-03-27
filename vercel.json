@@ -2,33 +2,28 @@
   "version": 2,
   "builds": [
     {
-      "src": "app.py",
-      "use": "@vercel/python",
-      "config": {
-        "runtime": "python3.11",
-        "maxLambdaSize": "50mb",
-        "installCommand": "pip install -r requirements.txt",
-        "framework": "fastapi"
-      }
-    },
-    {
       "src": "sol_front.py",
       "use": "@vercel/python",
       "config": {
         "runtime": "python3.11",
-        "installCommand": "pip install streamlit httpx python-dotenv",
-        "startCommand": "streamlit run sol_front.py --server.port=$PORT"
+        "maxLambdaSize": "15mb",
+        "memory": 512,
+        "installCommand": "pip install -r requirements_vercel.txt --target .venv",
+        "startCommand": "streamlit run sol_front.py --server.port=$PORT --server.headless=true --server.enableCORS=false --browser.gatherUsageStats=false"
       }
     }
   ],
   "routes": [
     {
-      "src": "/api/(.*)",
-      "dest": "app.py"
-    },
-    {
       "src": "/(.*)",
-      "dest": "sol_front.py"
+      "dest": "sol_front.py",
+      "headers": {
+        "Cache-Control": "no-store, max-age=0"
+      }
     }
-  ]
+  ],
+  "regions": ["iad1"],
+  "env": {
+    "BACKEND_URL": "https://your-render-app.onrender.com"
+  }
 }
