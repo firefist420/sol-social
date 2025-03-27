@@ -8,7 +8,7 @@
         "runtime": "python3.9",
         "maxLambdaSize": "15mb",
         "includeFiles": ["solsocial.db"],
-        "installCommand": "pip install -r requirements_vercel.txt"
+        "installCommand": "pip install -r requirements_vercel.txt && streamlit config show > config.toml"
       }
     }
   ],
@@ -16,7 +16,7 @@
     {
       "src": "/(.*)",
       "dest": "sol_front.py",
-      "methods": ["GET", "POST"]
+      "methods": ["GET", "POST", "HEAD"]
     }
   ]
 }

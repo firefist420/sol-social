@@ -61,12 +61,12 @@ def show_captcha():
     <script src="https://js.hcaptcha.com/1/api.js" async defer></script>
     <div class="h-captcha" data-sitekey="{HCAPTCHA_SITEKEY}" data-callback="onCaptchaSubmit"></div>
     <script>
-    function onCaptchaSubmit(token) {{
-        window.parent.postMessage({{
+    function onCaptchaSubmit(token) {
+        window.parent.postMessage({
             type: "hcaptcha_verified",
             token: token
-        }}, "*");
-    }}
+        }, "*");
+    }
     </script>
     """, height=100)
 
@@ -78,23 +78,23 @@ def wallet_connector():
     st.markdown("""
     <script src="https://unpkg.com/@solana/web3.js@latest/lib/index.iife.min.js"></script>
     <script>
-    async function connectWallet() {{
+    async function connectWallet() {
         if (!window.solana?.isPhantom) return alert("Phantom not found");
-        try {{
+        try {
             const response = await window.solana.connect();
             const publicKey = response.publicKey.toString();
-            const message = `SolSocial Auth ${{Date.now()}}`;
+            const message = `SolSocial Auth ${Date.now()}`;
             const signedMessage = await window.solana.signMessage(new TextEncoder().encode(message));
-            window.parent.postMessage({{
+            window.parent.postMessage({
                 type: "walletConnected",
                 publicKey: publicKey,
                 signedMessage: Array.from(signedMessage.signature),
                 message: message
-            }}, "*");
-        }} catch (error) {{
+            }, "*");
+        } catch (error) {
             console.error(error);
-        }}
-    }}
+        }
+    }
     document.getElementById("connect-button").addEventListener("click", connectWallet);
     </script>
     <button id="connect-button" class="connect-button">
@@ -102,7 +102,7 @@ def wallet_connector():
         Connect Wallet
     </button>
     <style>
-    .connect-button {{
+    .connect-button {
         background-color: purple;
         color: white;
         border: none;
@@ -114,7 +114,7 @@ def wallet_connector():
         top: 20px;
         left: 20px;
         z-index: 1;
-    }}
+    }
     </style>
     """, unsafe_allow_html=True)
 
