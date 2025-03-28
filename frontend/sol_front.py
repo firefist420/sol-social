@@ -1,6 +1,5 @@
 ﻿import streamlit as st
 import httpx
-import sqlite3
 import os
 import asyncio
 from dotenv import load_dotenv

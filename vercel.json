@@ -7,16 +7,14 @@
       "config": {
         "runtime": "python3.9",
         "maxLambdaSize": "50mb",
-        "installCommand": "pip install -r frontend/requirements_vercel.txt && streamlit config show > frontend/config.toml",
-        "includeFiles": ["frontend/config.toml"]
+        "installCommand": "pip install -r frontend/requirements_vercel.txt"
       }
     }
   ],
   "routes": [
     {
       "src": "/(.*)",
-      "dest": "frontend/sol_front.py",
-      "methods": ["GET", "POST", "OPTIONS"]
+      "dest": "frontend/sol_front.py"
     }
   ]
 }
