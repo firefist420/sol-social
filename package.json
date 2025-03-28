@@ -1,0 +1,14 @@
+{
+  "name": "sol-social-frontend",
+  "version": "1.0.0",
+  "description": "SolSocial Frontend",
+  "scripts": {
+    "start": "streamlit run sol_front.py"
+  },
+  "dependencies": {
+    "streamlit": "^1.32.0"
+  },
+  "engines": {
+    "node": ">=16.x"
+  }
+}
