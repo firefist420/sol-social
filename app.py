@@ -17,6 +17,7 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
+from fastapi.responses import JSONResponse
 
 logging.basicConfig(
     level=logging.INFO,
@@ -38,20 +39,24 @@ class Settings:
 settings = Settings()
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-engine = create_engine(settings.database_url)
+engine = create_engine(
+    settings.database_url,
+    pool_size=20,
+    max_overflow=10,
+    pool_timeout=30,
+    pool_pre_ping=True
+)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
 class User(Base):
     __tablename__ = "users"
-    
     id = Column(Integer, primary_key=True, index=True)
     wallet_address = Column(String(44), unique=True, index=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 class Post(Base):
     __tablename__ = "posts"
-    
     id = Column(Integer, primary_key=True, index=True)
     content = Column(Text)
     author_wallet = Column(String(44), index=True)
@@ -71,9 +76,18 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
+    expose_headers=["Authorization"]
 )
+
+@app.middleware("http")
+async def force_https(request: Request, call_next):
+    if os.getenv("ENVIRONMENT") == "production":
+        if request.url.scheme == "http":
+            url = request.url.replace(scheme="https")
+            raise HTTPException(status_code=301, headers={"Location": str(url)})
+    return await call_next(request)
 
 def get_db() -> Session:
     db = SessionLocal()
@@ -106,7 +120,6 @@ async def get_current_user(
             raise credentials_exception
     except JWTError:
         raise credentials_exception
-    
     user = db.query(User).filter(User.wallet_address == wallet_address).first()
     if user is None:
         raise credentials_exception
@@ -160,7 +173,18 @@ async def root():
 
 @app.get("/health", tags=["Health"])
 async def health_check():
-    return {"status": "healthy", "timestamp": datetime.utcnow().isoformat()}
+    try:
+        async with httpx.AsyncClient() as client:
+            solana_client = Client(settings.solana_rpc_url)
+            solana_client.get_block_height()
+        return {
+            "status": "healthy",
+            "timestamp": datetime.utcnow().isoformat(),
+            "services": ["solana_rpc"]
+        }
+    except Exception as e:
+        logger.error(f"Health check failed: {str(e)}")
+        raise HTTPException(status_code=503, detail="Service unavailable")
 
 @app.post("/verify-captcha", tags=["Auth"])
 async def verify_captcha(token: str = Form(...)):
@@ -184,7 +208,6 @@ async def wallet_auth(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Captcha verification failed"
         )
-    
     pubkey = Pubkey.from_string(auth.wallet_address)
     msg = Message.new(bytes(auth.message, 'utf-8'))
     if not pubkey.verify(msg, bytes(auth.signed_message)):
@@ -192,14 +215,12 @@ async def wallet_auth(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid signature"
         )
-    
     user = db.query(User).filter(User.wallet_address == auth.wallet_address).first()
     if not user:
         user = User(wallet_address=auth.wallet_address)
         db.add(user)
         db.commit()
         db.refresh(user)
-    
     access_token = create_access_token({"sub": auth.wallet_address})
     return {
         "access_token": access_token,
@@ -230,3 +251,11 @@ async def create_post(
     db.commit()
     db.refresh(db_post)
     return db_post
+
+@app.exception_handler(404)
+async def not_found_exception_handler(request: Request, exc: HTTPException):
+    return JSONResponse(
+        status_code=404,
+        content={"message": "Endpoint not found"},
+        headers={"Access-Control-Allow-Origin": "*"}
+    )
