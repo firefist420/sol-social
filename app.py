@@ -19,7 +19,7 @@ class Settings:
         self.hcaptcha_sitekey = os.getenv("HCAPTCHA_SITEKEY")
         self.solana_rpc_url = os.getenv("SOLANA_RPC_URL")
         self.jwt_secret = os.getenv("JWT_SECRET")
-        self.cors_origins = os.getenv("CORS_ORIGINS", "").split(",")
+        self.cors_origins = ["*"]
 
 settings = Settings()
 
@@ -27,7 +27,7 @@ app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=settings.cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -37,12 +37,12 @@ app.add_middleware(
 async def root():
     return {"status": "SolSocial API running"}
 
+@app.get("/api")
+async def api_root():
+    return {"status": "API endpoints are available at /auth, /posts, etc."}
+
 @app.get("/health")
 async def health_check():
-    return {"status": "healthy"}
-
-@app.get("/api/health")
-async def api_health_check():
     return {"status": "healthy"}
 
 async def verify_hcaptcha(token: str):
