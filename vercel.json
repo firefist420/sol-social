@@ -6,16 +6,17 @@
       "use": "@vercel/python",
       "config": {
         "runtime": "python3.9",
-        "maxLambdaSize": "15mb",
-        "installCommand": "pip install -r frontend/requirements_vercel.txt && streamlit config show > frontend/config.toml"
+        "maxLambdaSize": "50mb",
+        "installCommand": "pip install -r frontend/requirements_vercel.txt && streamlit config show > frontend/config.toml",
+        "includeFiles": ["frontend/config.toml"]
       }
     }
   ],
   "routes": [
     {
-      "src": "/(.*)", 
+      "src": "/(.*)",
       "dest": "frontend/sol_front.py",
-      "methods": ["GET", "POST"]
+      "methods": ["GET", "POST", "OPTIONS"]
     }
   ]
 }
