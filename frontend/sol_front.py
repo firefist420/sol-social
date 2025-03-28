@@ -2,6 +2,7 @@
 import httpx
 import sqlite3
 import os
+import asyncio
 from dotenv import load_dotenv
 import streamlit.web.bootstrap
 import streamlit.components.v1 as components
@@ -62,12 +63,12 @@ def show_captcha():
     <script src="https://js.hcaptcha.com/1/api.js" async defer></script>
     <div class="h-captcha" data-sitekey="{HCAPTCHA_SITEKEY}" data-callback="onCaptchaSubmit"></div>
     <script>
-    function onCaptchaSubmit(token) {
-        window.parent.postMessage({
+    function onCaptchaSubmit(token) {{
+        window.parent.postMessage({{
             type: "hcaptcha_verified",
             token: token
-        }, "*");
-    }
+        }}, "*");
+    }}
     </script>
     """, height=100)
 
@@ -188,29 +189,30 @@ async def render_feed():
             st.write(f"**{post['author']}**")
             st.write(post['content'])
 
-if not st.session_state.get('backend_checked'):
-    if not await check_backend():
-        st.error("Backend service unavailable")
-        st.stop()
-    st.session_state.backend_checked = True
+async def main():
+    if not st.session_state.get('backend_checked'):
+        if not await check_backend():
+            st.error("Backend service unavailable")
+            st.stop()
+        st.session_state.backend_checked = True
 
-if st.session_state.user_data["user_id"]:
-    st.sidebar.write(f"User: {st.session_state.user_data['user_id']}")
-    if st.sidebar.button("Logout"):
-        st.session_state.clear()
-        st.rerun()
-    st.experimental_rerun(render_feed)()
-else:
-    wallet_connector()
-    if st.session_state.get("wallet_connected"):
-        if st.session_state.user_data["auth_token"] is None:
-            if st.experimental_rerun(auth_wallet)(
-                st.session_state["wallet_address"],
-                st.session_state["signed_message"],
-                st.session_state["message"],
-                st.session_state["hcaptcha_token"]
-            ):
-                st.rerun()
+    if st.session_state.user_data["user_id"]:
+        st.sidebar.write(f"User: {st.session_state.user_data['user_id']}")
+        if st.sidebar.button("Logout"):
+            st.session_state.clear()
+            st.rerun()
+        await render_feed()
+    else:
+        wallet_connector()
+        if st.session_state.get("wallet_connected"):
+            if st.session_state.user_data["auth_token"] is None:
+                if await auth_wallet(
+                    st.session_state["wallet_address"],
+                    st.session_state["signed_message"],
+                    st.session_state["message"],
+                    st.session_state["hcaptcha_token"]
+                ):
+                    st.rerun()
 
 st.markdown("""
 <script>
@@ -239,4 +241,4 @@ window.addEventListener("message", (e) => {
 """, unsafe_allow_html=True)
 
 if __name__ == "__main__":
-    streamlit.web.bootstrap.run("sol_front.py", "", [], {})
+    asyncio.run(main())

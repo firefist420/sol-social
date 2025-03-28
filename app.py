@@ -27,7 +27,7 @@ app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origins,
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -36,6 +36,14 @@ app.add_middleware(
 @app.get("/")
 async def root():
     return {"status": "SolSocial API running"}
+
+@app.get("/health")
+async def health_check():
+    return {"status": "healthy"}
+
+@app.get("/api/health")
+async def api_health_check():
+    return {"status": "healthy"}
 
 async def verify_hcaptcha(token: str):
     try:
@@ -85,3 +93,11 @@ async def wallet_auth(request: Request, auth: WalletAuthRequest, hcaptcha_token:
     except Exception as e:
         logger.error(f"Wallet verification failed: {e}")
         raise HTTPException(status_code=401, detail="Wallet verification failed")
+
+@app.get("/posts")
+async def get_posts():
+    return {"posts": []}
+
+@app.post("/posts")
+async def create_post():
+    return {"status": "success"}
