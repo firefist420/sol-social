@@ -1,4 +1,6 @@
-﻿import logging
+﻿# -*- coding: utf-8 -*-
+
+import logging
 from datetime import datetime, timedelta
 from typing import List, Optional, AsyncGenerator
 from contextlib import asynccontextmanager
@@ -85,8 +87,7 @@ app = FastAPI(
     title="SolSocial API",
     version="1.0.0",
     docs_url="/docs" if settings.environment == "development" else None,
-    redoc_url=None,
-    root_path="/api"
+    redoc_url=None
 )
 
 app.add_middleware(
@@ -204,20 +205,16 @@ async def root():
     return {"status": "SolSocial API running"}
 
 @app.get("/health")
-async def health_check(db: Session = Depends(get_db)):
+async def health_check():
     try:
-        db.execute("SELECT 1")
+        with SessionLocal() as db:
+            db.execute("SELECT 1")
         solana_client = Client(settings.solana_rpc_url)
-        solana_client.get_block_height()
-        return {
-            "status": "healthy",
-            "database": "connected",
-            "solana": "connected",
-            "environment": settings.environment
-        }
+        solana_client.get_version()
+        return {"status": "healthy"}
     except Exception as e:
-        logger.error(f"Health check failed: {str(e)}")
-        raise HTTPException(status_code=503, detail="Service unavailable")
+        logger.error(f"Health check failed: {e}")
+        raise HTTPException(status_code=503)
 
 @app.post("/verify-captcha")
 async def verify_captcha(token: str = Form(...)):

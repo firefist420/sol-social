@@ -1,4 +1,6 @@
-﻿import streamlit as st
+﻿# -*- coding: utf-8 -*-
+
+import streamlit as st
 import httpx
 import os
 import asyncio
@@ -12,17 +14,18 @@ HCAPTCHA_SITEKEY = os.getenv("HCAPTCHA_SITEKEY")
 st.set_page_config(page_title="SolSocial", layout="wide", page_icon="🚀")
 
 def init_session():
-    required_keys = {
-        "user_data": {"wallet_address": "", "auth_token": None},
-        "wallet_connected": False,
-        "hcaptcha_verified": False,
-        "hcaptcha_token": None,
-        "signed_message": None,
-        "message": None
-    }
-    for key, default_value in required_keys.items():
-        if key not in st.session_state:
-            st.session_state[key] = default_value
+    if 'hcaptcha_verified' not in st.session_state:
+        st.session_state.hcaptcha_verified = False
+    if 'hcaptcha_token' not in st.session_state:
+        st.session_state.hcaptcha_token = None
+    if 'wallet_connected' not in st.session_state:
+        st.session_state.wallet_connected = False
+    if 'user_data' not in st.session_state:
+        st.session_state.user_data = {"wallet_address": "", "auth_token": None}
+    if 'signed_message' not in st.session_state:
+        st.session_state.signed_message = None
+    if 'message' not in st.session_state:
+        st.session_state.message = None
 
 init_session()
 
@@ -50,7 +53,7 @@ def set_background():
         width: 300px;
     }
     .captcha-instructions {
-        color: white !important;
+        color: white;
         font-family: 'Arial', sans-serif;
         font-size: 24px;
         font-weight: bold;
@@ -107,6 +110,7 @@ def show_auth_components():
             <img src="https://i.ibb.co/fd1PzFX9/connect-wallet-button.png" alt="Wallet">
             Connect Wallet
         </button>
+        <script src="https://unpkg.com/@solana/web3.js@latest/lib/index.iife.min.js"></script>
         <script>
         function onCaptchaSubmit(token) {{
             window.parent.postMessage({{
@@ -117,18 +121,11 @@ def show_auth_components():
             document.getElementById("connect-button").style.display = "flex";
         }}
         
-        window.hcaptchaOnLoad = function() {{
-            hcaptcha.render('h-captcha', {{
-                sitekey: '{HCAPTCHA_SITEKEY}',
-                callback: onCaptchaSubmit
-            }});
-        }};
-        
         async function connectWallet() {{
             try {{
                 const provider = window.solana;
                 if (!provider?.isPhantom) {{
-                    alert("Phantom wallet not found. Please install Phantom extension.");
+                    alert("Please install Phantom Wallet");
                     return;
                 }}
                 
@@ -146,8 +143,8 @@ def show_auth_components():
                 }}, "*");
                 
             }} catch (error) {{
-                console.error("Wallet connection error:", error);
-                alert("Failed to connect wallet: " + error.message);
+                console.error("Error:", error);
+                alert("Connection failed: " + error.message);
             }}
         }}
         
@@ -210,7 +207,6 @@ async def main():
                     pass
 
 components.html("""
-<script src="https://unpkg.com/@solana/web3.js@latest/lib/index.iife.min.js"></script>
 <script>
 window.addEventListener("message", (event) => {
     if (event.data.type === "walletConnected") {
