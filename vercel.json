@@ -10,14 +10,21 @@
       }
     }
   ],
-  "routes": [
+  "rewrites": [
     {
-      "src": "/(.*)",
-      "dest": "sol_front.py",
-      "methods": ["GET", "POST", "OPTIONS"]
+      "source": "/(.*)",
+      "destination": "/sol_front.py"
     }
   ],
-  "rewrites": [
-    { "source": "/(.*)", "destination": "/sol_front.py" }
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        {
+          "key": "Access-Control-Allow-Origin",
+          "value": "*"
+        }
+      ]
+    }
   ]
 }
