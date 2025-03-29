@@ -94,6 +94,10 @@ app = FastAPI(
     redoc_url=None
 )
 
+@app.head("/")
+async def head_root():
+    return ""
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -213,20 +217,22 @@ async def root():
 async def health_check():
     try:
         with SessionLocal() as db:
-            db.execute(text("SELECT 1"))  # Wrap SQL in text()
+            db.execute(text("SELECT 1"))
         solana_client = Client(settings.solana_rpc_url)
         solana_client.get_version()
         return JSONResponse(
             content={"status": "healthy"},
-            status_code=200,
-            headers={"Access-Control-Allow-Origin": "*"}
+            headers={
+                "Cache-Control": "no-cache",
+                "X-Health-Check": "1"
+            }
         )
     except Exception as e:
         logger.error(f"Health check failed: {str(e)}")
         return JSONResponse(
-            content={"status": "unhealthy", "error": str(e)},
+            content={"status": "unhealthy"},
             status_code=503,
-            headers={"Access-Control-Allow-Origin": "*"}
+            headers={"Retry-After": "10"}
         )
 
 @app.post("/verify-captcha")
@@ -343,4 +349,9 @@ async def server_error_handler(request: Request, exc: HTTPException):
         status_code=500,
         content={"detail": "Internal Server Error"}
     )
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    logger.info("Shutting down gracefully...")
+    engine.dispose()
 

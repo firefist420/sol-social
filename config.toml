@@ -1,5 +1,8 @@
-[server]
-port = 8000
-host = "0.0.0.0"
-workers = 4
-timeout = 120
+[build]
+command = "pip install -r requirements.txt"
+
+[run]
+command = "uvicorn app:app --host 0.0.0.0 --port 10000 --timeout-keep-alive 30"
+
+[environment]
+PYTHON_VERSION = "3.10"

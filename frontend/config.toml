@@ -1,6 +1,9 @@
-[server]
-headless = true
-port = 8501
-enableCORS = false
-[browser]
-serverAddress = "0.0.0.0"
+[build]
+command = "pip install -r requirements_vercel.txt"
+
+[run]
+command = "streamlit run sol_front.py --server.port=8501 --server.headless=true"
+
+[environment]
+STREAMLIT_SERVER_PORT = "8501"
+STREAMLIT_SERVER_HEADLESS = "true"
