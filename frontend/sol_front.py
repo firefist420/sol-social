@@ -6,6 +6,9 @@ import os
 import asyncio
 from dotenv import load_dotenv
 import streamlit.components.v1 as components
+import sys
+import os
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 load_dotenv()
 
