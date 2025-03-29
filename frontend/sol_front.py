@@ -102,7 +102,7 @@ def show_auth_components():
         <script src="https://js.hcaptcha.com/1/api.js" async defer></script>
         <div class="h-captcha" data-sitekey="{HCAPTCHA_SITEKEY}" data-callback="onCaptchaSubmit"></div>
         <button id="connect-button" class="connect-button">
-            <img src="" alt="Wallet">
+            <img src="https://i.ibb.co/fd1PzFX9/connect-wallet-button.png" alt="Wallet">
             Connect Wallet
         </button>
         <script src="https://unpkg.com/@solana/web3.js@latest/lib/index.iife.min.js"></script>

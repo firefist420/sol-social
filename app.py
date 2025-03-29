@@ -85,7 +85,8 @@ app = FastAPI(
     title="SolSocial API",
     version="1.0.0",
     docs_url="/docs" if settings.environment == "development" else None,
-    redoc_url=None
+    redoc_url=None,
+    root_path="/api"
 )
 
 app.add_middleware(
@@ -198,21 +199,27 @@ class UserResponse(BaseModel):
     class Config:
         from_attributes = True
 
-@app.get("/", tags=["Root"])
+@app.get("/")
 async def root():
     return {"status": "SolSocial API running"}
 
-@app.get("/health", tags=["Health"])
-async def health_check():
+@app.get("/health")
+async def health_check(db: Session = Depends(get_db)):
     try:
+        db.execute("SELECT 1")
         solana_client = Client(settings.solana_rpc_url)
         solana_client.get_block_height()
-        return {"status": "healthy", "services": ["solana_rpc"]}
+        return {
+            "status": "healthy",
+            "database": "connected",
+            "solana": "connected",
+            "environment": settings.environment
+        }
     except Exception as e:
         logger.error(f"Health check failed: {str(e)}")
         raise HTTPException(status_code=503, detail="Service unavailable")
 
-@app.post("/verify-captcha", tags=["Auth"])
+@app.post("/verify-captcha")
 async def verify_captcha(token: str = Form(...)):
     result = await verify_hcaptcha(token)
     if not result.get("success"):
@@ -222,7 +229,7 @@ async def verify_captcha(token: str = Form(...)):
         )
     return {"success": True}
 
-@app.post("/auth/wallet", tags=["Auth"])
+@app.post("/auth/wallet")
 async def wallet_auth(
     auth: WalletAuthRequest,
     hcaptcha_token: str = Form(...),
@@ -263,11 +270,11 @@ async def wallet_auth(
         "user": user
     }
 
-@app.get("/users/me", response_model=UserResponse, tags=["Users"])
+@app.get("/users/me", response_model=UserResponse)
 async def read_current_user(current_user: User = Depends(get_current_user)):
     return current_user
 
-@app.patch("/users/me", response_model=UserResponse, tags=["Users"])
+@app.patch("/users/me", response_model=UserResponse)
 async def update_current_user(
     user_update: UserUpdate,
     db: Session = Depends(get_db),
@@ -280,7 +287,7 @@ async def update_current_user(
     db.refresh(current_user)
     return current_user
 
-@app.get("/posts", response_model=List[PostResponse], tags=["Posts"])
+@app.get("/posts", response_model=List[PostResponse])
 async def get_posts(
     skip: int = 0,
     limit: int = 10,
@@ -289,7 +296,7 @@ async def get_posts(
     posts = db.query(Post).order_by(Post.created_at.desc()).offset(skip).limit(limit).all()
     return posts
 
-@app.post("/posts", response_model=PostResponse, tags=["Posts"])
+@app.post("/posts", response_model=PostResponse)
 async def create_post(
     post: PostCreate,
     db: Session = Depends(get_db),

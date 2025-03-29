@@ -3,14 +3,18 @@
   "builds": [
     {
       "src": "sol_front.py",
-      "use": "@vercel/python"
+      "use": "@vercel/python",
+      "config": {
+        "maxLambdaSize": "15mb",
+        "runtime": "python3.9"
+      }
     }
   ],
   "routes": [
     {
       "src": "/(.*)",
       "dest": "sol_front.py",
-      "methods": ["GET", "POST"] 
+      "methods": ["GET", "POST", "OPTIONS"]
     }
   ]
 }
