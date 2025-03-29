@@ -4,35 +4,23 @@ import os
 import asyncio
 from dotenv import load_dotenv
 import streamlit.components.v1 as components
-from datetime import datetime
-from typing import Optional, Dict, Any
 
 load_dotenv()
+BACKEND_URL = os.getenv("BACKEND_URL")
+HCAPTCHA_SITEKEY = os.getenv("HCAPTCHA_SITEKEY")
 
-BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
-HCAPTCHA_SITEKEY = os.getenv("HCAPTCHA_SITEKEY", "")
-PAGE_TITLE = "SolSocial"
-
-st.set_page_config(page_title=PAGE_TITLE, layout="wide")
+st.set_page_config(page_title="SolSocial", layout="wide", page_icon="🚀")
 
 def init_session():
-    if "user_data" not in st.session_state:
-        st.session_state.update({
-            "user_data": {
-                "user_id": None,
-                "wallet_address": "",
-                "auth_token": None
-            },
-            "wallet_connected": False,
-            "hcaptcha_token": None,
-            "backend_checked": False
-        })
-
-def clear_session():
-    keys = list(st.session_state.keys())
-    for key in keys:
-        del st.session_state[key]
-    init_session()
+    required_keys = {
+        "user_data": {"wallet_address": "", "auth_token": None},
+        "wallet_connected": False,
+        "hcaptcha_verified": False,
+        "hcaptcha_token": None
+    }
+    for key, default_value in required_keys.items():
+        if key not in st.session_state:
+            st.session_state[key] = default_value
 
 init_session()
 
@@ -42,6 +30,56 @@ def set_background():
     .stApp {
         background-image: url('https://i.ibb.co/YBngK5s6/background-jpg.jpg');
         background-size: cover;
+        background-position: center;
+        background-attachment: fixed;
+    }
+    .auth-container {
+        position: absolute;
+        top: 20px;
+        left: 20px;
+        z-index: 100;
+        display: flex;
+        flex-direction: column;
+        gap: 15px;
+        background-color: rgba(0,0,0,0.8);
+        padding: 20px;
+        border-radius: 12px;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+        width: 300px;
+    }
+    .captcha-instructions {
+        color: white;
+        font-family: 'Arial', sans-serif;
+        font-size: 24px;
+        font-weight: bold;
+        margin: 0 0 10px 0;
+        text-align: center;
+    }
+    .connect-button {
+        background-color: #7B2CBF;
+        color: white;
+        border: none;
+        border-radius: 8px;
+        padding: 12px 0;
+        font-size: 16px;
+        font-weight: bold;
+        cursor: pointer;
+        display: none;
+        justify-content: center;
+        align-items: center;
+        gap: 8px;
+        width: 100%;
+        transition: all 0.3s ease;
+    }
+    .connect-button:hover {
+        background-color: #9D4EDD;
+        transform: translateY(-2px);
+    }
+    .connect-button img {
+        height: 20px;
+    }
+    .h-captcha {
+        margin: 0 auto;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -50,196 +88,157 @@ set_background()
 
 async def check_backend():
     try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
+        async with httpx.AsyncClient() as client:
             response = await client.get(f"{BACKEND_URL}/health")
             return response.status_code == 200
     except Exception as e:
         st.error(f"Backend connection error: {str(e)}")
         return False
 
-def show_captcha():
+def show_auth_components():
     components.html(f"""
-    <script src="https://js.hcaptcha.com/1/api.js" async defer></script>
-    <div class="h-captcha" data-sitekey="{HCAPTCHA_SITEKEY}" data-callback="onCaptchaSubmit"></div>
-    <script>
-    function onCaptchaSubmit(token) {{
-        window.parent.postMessage({{
-            type: "hcaptcha_verified",
-            token: token
-        }}, "*");
-    }}
-    </script>
-    """, height=100)
-
-def wallet_connector():
-    components.html(f"""
-    <script src="https://unpkg.com/@solana/web3.js@latest/lib/index.iife.min.js"></script>
-    <script>
-    async function connectWallet() {{
-        if (!window.solana?.isPhantom) return alert("Phantom not found");
-        try {{
-            const response = await window.solana.connect();
-            const publicKey = response.publicKey.toString();
-            const message = `SolSocial Auth ${{Date.now()}}`;
-            const signedMessage = await window.solana.signMessage(new TextEncoder().encode(message));
-            window.parent.postMessage({{
-                type: "walletConnected",
-                publicKey: publicKey,
-                signedMessage: Array.from(signedMessage.signature),
-                message: message
-            }}, "*");
-        }} catch (error) {{
-            console.error(error);
+    <div class="auth-container">
+        <p class="captcha-instructions">Verify You're Human</p>
+        <script src="https://js.hcaptcha.com/1/api.js" async defer></script>
+        <div class="h-captcha" data-sitekey="{HCAPTCHA_SITEKEY}" data-callback="onCaptchaSubmit"></div>
+        <button id="connect-button" class="connect-button">
+            <img src="" alt="Wallet">
+            Connect Wallet
+        </button>
+        <script src="https://unpkg.com/@solana/web3.js@latest/lib/index.iife.min.js"></script>
+        <script>
+        function onCaptchaSubmit(token) {{
+            fetch("{BACKEND_URL}/verify-captcha", {{
+                method: "POST",
+                headers: {{ "Content-Type": "application/json" }},
+                body: JSON.stringify({{ token: token }})
+            }})
+            .then(response => response.json())
+            .then(data => {{
+                if (data.success) {{
+                    window.parent.postMessage({{
+                        type: "hcaptcha_verified",
+                        token: token,
+                        verified: true
+                    }}, "*");
+                    document.getElementById("connect-button").style.display = "flex";
+                }} else {{
+                    hcaptcha.reset();
+                    alert("Verification failed. Please try again.");
+                }}
+            }})
+            .catch(error => {{
+                console.error("Error:", error);
+                hcaptcha.reset();
+                alert("Verification error. Please try again.");
+            }});
         }}
-    }}
-    document.getElementById("connect-button").addEventListener("click", connectWallet);
-    </script>
-    <button id="connect-button" class="connect-button">
-        <img src="https://phantom.app/favicon.ico" width="20">
-        Connect Wallet
-    </button>
-    <style>
-    .connect-button {{
-        background-color: purple;
-        color: white;
-        border: none;
-        padding: 12px 24px;
-        font-size: 16px;
-        cursor: pointer;
-        border-radius: 25px;
-        position: fixed;
-        top: 20px;
-        left: 20px;
-        z-index: 1;
-    }}
-    </style>
-    """, height=100)
+        
+        async function connectWallet() {{
+            try {{
+                const provider = window.solana;
+                if (!provider?.isPhantom) {{
+                    alert("Please install Phantom Wallet");
+                    return;
+                }}
+                
+                const response = await provider.connect();
+                const publicKey = response.publicKey.toString();
+                const message = `SolSocial Auth ${{Date.now()}}`;
+                const encodedMessage = new TextEncoder().encode(message);
+                const signedMessage = await provider.signMessage(encodedMessage);
+                
+                window.parent.postMessage({{
+                    type: "walletConnected",
+                    publicKey: publicKey,
+                    signedMessage: Array.from(signedMessage.signature),
+                    message: message
+                }}, "*");
+                
+            }} catch (error) {{
+                console.error("Error:", error);
+                alert("Connection failed: " + error.message);
+            }}
+        }}
+        
+        document.getElementById("connect-button").addEventListener("click", connectWallet);
+        </script>
+    </div>
+    """, height=260)
 
-async def auth_wallet(wallet: str, sig: list, msg: str, hcaptcha_token: str) -> bool:
+async def auth_wallet(wallet, sig, msg, hcaptcha_token):
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
-            r = await client.post(
+            response = await client.post(
                 f"{BACKEND_URL}/auth/wallet",
-                data={
+                json={
                     "wallet_address": wallet,
-                    "signed_message": str(sig),
+                    "signed_message": sig,
                     "message": msg,
                     "hcaptcha_token": hcaptcha_token
                 }
             )
-            if r.status_code == 200:
-                data = r.json()
+            
+            if response.status_code == 200:
                 st.session_state.user_data = {
-                    "user_id": wallet,
                     "wallet_address": wallet,
-                    "auth_token": data.get("access_token")
+                    "auth_token": response.json().get("access_token")
                 }
+                st.rerun()
                 return True
             else:
-                st.error(f"Authentication failed: {r.text}")
+                error_msg = response.json().get("detail", "Authentication failed")
+                st.error(f"Error: {error_msg}")
                 return False
+                
     except Exception as e:
-        st.error(f"Error during authentication: {str(e)}")
+        st.error(f"Error: {str(e)}")
         return False
-
-async def fetch_posts() -> list:
-    try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            r = await client.get(f"{BACKEND_URL}/posts")
-            if r.status_code == 200:
-                return r.json().get("posts", [])
-            return []
-    except Exception as e:
-        st.error(f"Error fetching posts: {str(e)}")
-        return []
-
-async def submit_post(content: str, author: str) -> bool:
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            r = await client.post(
-                f"{BACKEND_URL}/posts",
-                json={
-                    "content": content,
-                    "author": author
-                },
-                headers={"Authorization": f"Bearer {st.session_state.user_data['auth_token']}"}
-            )
-            if r.status_code == 200:
-                return True
-            st.error(f"Post submission failed: {r.text}")
-            return False
-    except Exception as e:
-        st.error(f"Error submitting post: {str(e)}")
-        return False
-
-async def render_feed():
-    st.title("Home")
-    st.write(f"Welcome, {st.session_state.user_data['wallet_address'][:6]}...{st.session_state.user_data['wallet_address'][-4:]}")
-    
-    with st.form("post_form"):
-        content = st.text_area("What's on your mind?", max_chars=280)
-        if st.form_submit_button("Post") and content:
-            if await submit_post(content, st.session_state.user_data["wallet_address"]):
-                st.rerun()
-
-    posts = await fetch_posts()
-    for post in posts:
-        with st.container(border=True):
-            st.write(f"**{post['author_wallet'][:6]}...{post['author_wallet'][-4:]}**")
-            st.write(post['content'])
-            st.caption(post['created_at'])
 
 async def main():
-    if not st.session_state.get('backend_checked'):
-        if not await check_backend():
-            st.error("Backend service unavailable")
-            st.stop()
-        st.session_state.backend_checked = True
+    if not await check_backend():
+        st.stop()
+
+    show_auth_components()
+
+    if st.session_state.hcaptcha_verified and st.session_state.get("wallet_connected"):
+        if st.session_state.hcaptcha_token and st.session_state.user_data["wallet_address"]:
+            await auth_wallet(
+                st.session_state.user_data["wallet_address"],
+                st.session_state.get("signed_message"),
+                st.session_state.get("message"),
+                st.session_state.hcaptcha_token
+            )
 
     if st.session_state.user_data["auth_token"]:
-        st.sidebar.write(f"User: {st.session_state.user_data['wallet_address'][:6]}...{st.session_state.user_data['wallet_address'][-4:]}")
-        if st.sidebar.button("Logout"):
-            clear_session()
-            st.rerun()
-        await render_feed()
-    else:
-        col1, col2 = st.columns([1, 1])
+        col1, col2 = st.columns([3, 1])
         with col1:
-            st.markdown("## Welcome to SolSocial")
-            st.markdown("Connect your wallet to get started")
-            show_captcha()
-        with col2:
-            st.image("https://i.ibb.co/YBngK5s6/background-jpg.jpg", width=300)
-        
-        wallet_connector()
-        if st.session_state.get("wallet_connected"):
-            if await auth_wallet(
-                st.session_state["wallet_address"],
-                st.session_state["signed_message"],
-                st.session_state["message"],
-                st.session_state["hcaptcha_token"]
-            ):
-                st.rerun()
+            st.title("SolSocial Feed")
+            with st.form("post_form"):
+                content = st.text_area("What's happening?")
+                if st.form_submit_button("Post"):
+                    pass
 
 components.html("""
 <script>
-window.addEventListener("message", (e) => {
-    if (e.data.type === "walletConnected") {
+window.addEventListener("message", (event) => {
+    if (event.data.type === "walletConnected") {
         window.parent.postMessage({
             type: "streamlit:setComponentValue",
             value: {
                 wallet_connected: true,
-                wallet_address: e.data.publicKey,
-                signed_message: e.data.signedMessage,
-                message: e.data.message
+                wallet_address: event.data.publicKey,
+                signed_message: event.data.signedMessage,
+                message: event.data.message
             }
         }, "*");
     }
-    if (e.data.type === "hcaptcha_verified") {
+    if (event.data.type === "hcaptcha_verified") {
         window.parent.postMessage({
             type: "streamlit:setComponentValue",
             value: {
-                hcaptcha_token: e.data.token
+                hcaptcha_token: event.data.token,
+                hcaptcha_verified: true
             }
         }, "*");
     }

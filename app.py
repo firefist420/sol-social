@@ -1,27 +1,31 @@
-﻿from fastapi import FastAPI, HTTPException, Request, Depends, status, Form, Security
+﻿import logging
+from datetime import datetime, timedelta
+from typing import List, Optional, AsyncGenerator
+from contextlib import asynccontextmanager
+from fastapi import FastAPI, HTTPException, Request, Depends, status, Form, Security
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from fastapi.encoders import jsonable_encoder
+from pydantic import BaseModel, validator, Field
+from jose import jwt, JWTError
+from passlib.context import CryptContext
 import httpx
 from solana.rpc.api import Client
 from solders.pubkey import Pubkey
 from solders.message import Message
-import os
-from datetime import datetime, timedelta
-from typing import List, Optional, Annotated
-from pydantic import BaseModel, validator, Field
-import logging
-from fastapi.middleware.cors import CORSMiddleware
-from jose import jwt, JWTError
-from passlib.context import CryptContext
-from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime
+from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, ForeignKey
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker, Session
-from contextlib import asynccontextmanager
-from typing import AsyncGenerator
-from fastapi.responses import JSONResponse
+from sqlalchemy.orm import sessionmaker, Session, relationship
+import os
 
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler('solsocial.log')
+    ]
 )
 logger = logging.getLogger(__name__)
 
@@ -32,15 +36,17 @@ class Settings:
         self.solana_rpc_url = os.getenv("SOLANA_RPC_URL", "https://api.mainnet-beta.solana.com")
         self.jwt_secret = os.getenv("JWT_SECRET", "secret")
         self.jwt_algorithm = os.getenv("JWT_ALGORITHM", "HS256")
-        self.jwt_expire_minutes = int(os.getenv("JWT_EXPIRE_MINUTES", "30"))
+        self.jwt_expire_minutes = int(os.getenv("JWT_EXPIRE_MINUTES", "1440"))
         self.database_url = os.getenv("DATABASE_URL", "sqlite:///./solsocial.db")
         self.cors_origins = os.getenv("CORS_ORIGINS", "*").split(",")
+        self.environment = os.getenv("ENVIRONMENT", "development")
 
 settings = Settings()
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 engine = create_engine(
     settings.database_url,
+    connect_args={"check_same_thread": False} if settings.database_url.startswith("sqlite") else {},
     pool_size=20,
     max_overflow=10,
     pool_timeout=30,
@@ -53,14 +59,18 @@ class User(Base):
     __tablename__ = "users"
     id = Column(Integer, primary_key=True, index=True)
     wallet_address = Column(String(44), unique=True, index=True)
+    username = Column(String(50), unique=True, nullable=True)
+    bio = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+    posts = relationship("Post", back_populates="author")
 
 class Post(Base):
     __tablename__ = "posts"
     id = Column(Integer, primary_key=True, index=True)
     content = Column(Text)
-    author_wallet = Column(String(44), index=True)
+    author_wallet = Column(String(44), ForeignKey("users.wallet_address"))
     created_at = Column(DateTime, default=datetime.utcnow)
+    author = relationship("User", back_populates="posts")
 
 Base.metadata.create_all(bind=engine)
 
@@ -70,31 +80,34 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     yield
     logger.info("Shutting down SolSocial API")
 
-app = FastAPI(lifespan=lifespan)
+app = FastAPI(
+    lifespan=lifespan,
+    title="SolSocial API",
+    version="1.0.0",
+    docs_url="/docs" if settings.environment == "development" else None,
+    redoc_url=None
+)
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
     allow_credentials=True,
-    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_methods=["*"],
     allow_headers=["*"],
-    expose_headers=["Authorization"]
 )
 
 @app.middleware("http")
-async def force_https(request: Request, call_next):
-    if os.getenv("ENVIRONMENT") == "production":
-        if request.url.scheme == "http":
-            url = request.url.replace(scheme="https")
-            raise HTTPException(status_code=301, headers={"Location": str(url)})
-    return await call_next(request)
-
-def get_db() -> Session:
-    db = SessionLocal()
+async def db_session_middleware(request: Request, call_next):
+    response = None
     try:
-        yield db
+        request.state.db = SessionLocal()
+        response = await call_next(request)
     finally:
-        db.close()
+        request.state.db.close()
+    return response
+
+def get_db(request: Request) -> Session:
+    return request.state.db
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
@@ -120,6 +133,7 @@ async def get_current_user(
             raise credentials_exception
     except JWTError:
         raise credentials_exception
+    
     user = db.query(User).filter(User.wallet_address == wallet_address).first()
     if user is None:
         raise credentials_exception
@@ -130,7 +144,11 @@ async def verify_hcaptcha(token: str) -> dict:
         async with httpx.AsyncClient(timeout=10.0) as client:
             response = await client.post(
                 "https://hcaptcha.com/siteverify",
-                data={"secret": settings.hcaptcha_secret, "response": token}
+                data={
+                    "secret": settings.hcaptcha_secret,
+                    "response": token,
+                    "sitekey": settings.hcaptcha_sitekey
+                }
             )
             response.raise_for_status()
             return response.json()
@@ -150,18 +168,31 @@ class WalletAuthRequest(BaseModel):
     def validate_wallet_address(cls, v):
         try:
             Pubkey.from_string(v)
-        except ValueError as e:
-            raise ValueError("Invalid Solana wallet address") from e
+        except ValueError:
+            raise ValueError("Invalid Solana wallet address")
         return v
+
+class UserUpdate(BaseModel):
+    username: Optional[str] = Field(None, min_length=3, max_length=50)
+    bio: Optional[str] = Field(None, max_length=500)
 
 class PostCreate(BaseModel):
     content: str = Field(..., min_length=1, max_length=280)
-    author: str = Field(..., min_length=32, max_length=44)
 
 class PostResponse(BaseModel):
     id: int
     content: str
     author_wallet: str
+    created_at: datetime
+    author: Optional[dict]
+
+    class Config:
+        from_attributes = True
+
+class UserResponse(BaseModel):
+    wallet_address: str
+    username: Optional[str]
+    bio: Optional[str]
     created_at: datetime
 
     class Config:
@@ -169,19 +200,14 @@ class PostResponse(BaseModel):
 
 @app.get("/", tags=["Root"])
 async def root():
-    return {"status": "SolSocial API running", "version": "1.0.0"}
+    return {"status": "SolSocial API running"}
 
 @app.get("/health", tags=["Health"])
 async def health_check():
     try:
-        async with httpx.AsyncClient() as client:
-            solana_client = Client(settings.solana_rpc_url)
-            solana_client.get_block_height()
-        return {
-            "status": "healthy",
-            "timestamp": datetime.utcnow().isoformat(),
-            "services": ["solana_rpc"]
-        }
+        solana_client = Client(settings.solana_rpc_url)
+        solana_client.get_block_height()
+        return {"status": "healthy", "services": ["solana_rpc"]}
     except Exception as e:
         logger.error(f"Health check failed: {str(e)}")
         raise HTTPException(status_code=503, detail="Service unavailable")
@@ -208,25 +234,51 @@ async def wallet_auth(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Captcha verification failed"
         )
-    pubkey = Pubkey.from_string(auth.wallet_address)
-    msg = Message.new(bytes(auth.message, 'utf-8'))
-    if not pubkey.verify(msg, bytes(auth.signed_message)):
+    
+    try:
+        pubkey = Pubkey.from_string(auth.wallet_address)
+        msg = Message.new(bytes(auth.message, 'utf-8'))
+        if not pubkey.verify(msg, bytes(auth.signed_message)):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid signature"
+            )
+    except Exception as e:
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid signature"
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
         )
+
     user = db.query(User).filter(User.wallet_address == auth.wallet_address).first()
     if not user:
         user = User(wallet_address=auth.wallet_address)
         db.add(user)
         db.commit()
         db.refresh(user)
+
     access_token = create_access_token({"sub": auth.wallet_address})
     return {
         "access_token": access_token,
         "token_type": "bearer",
-        "wallet_address": auth.wallet_address
+        "user": user
     }
+
+@app.get("/users/me", response_model=UserResponse, tags=["Users"])
+async def read_current_user(current_user: User = Depends(get_current_user)):
+    return current_user
+
+@app.patch("/users/me", response_model=UserResponse, tags=["Users"])
+async def update_current_user(
+    user_update: UserUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    update_data = user_update.dict(exclude_unset=True)
+    for field, value in update_data.items():
+        setattr(current_user, field, value)
+    db.commit()
+    db.refresh(current_user)
+    return current_user
 
 @app.get("/posts", response_model=List[PostResponse], tags=["Posts"])
 async def get_posts(
@@ -252,10 +304,25 @@ async def create_post(
     db.refresh(db_post)
     return db_post
 
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"detail": exc.detail},
+        headers=exc.headers
+    )
+
 @app.exception_handler(404)
-async def not_found_exception_handler(request: Request, exc: HTTPException):
+async def not_found_handler(request: Request, exc: HTTPException):
     return JSONResponse(
         status_code=404,
-        content={"message": "Endpoint not found"},
-        headers={"Access-Control-Allow-Origin": "*"}
+        content={"detail": "Not Found"}
+    )
+
+@app.exception_handler(500)
+async def server_error_handler(request: Request, exc: HTTPException):
+    logger.error(f"Server error: {str(exc)}")
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal Server Error"}
     )
