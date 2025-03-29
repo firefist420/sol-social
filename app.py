@@ -19,6 +19,7 @@ from solders.message import Message
 from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, ForeignKey
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session, relationship
+from sqlalchemy import text
 import os
 from dotenv import load_dotenv
 
@@ -212,7 +213,7 @@ async def root():
 async def health_check():
     try:
         with SessionLocal() as db:
-            db.execute("SELECT 1")
+            db.execute(text("SELECT 1"))  # Wrap SQL in text()
         solana_client = Client(settings.solana_rpc_url)
         solana_client.get_version()
         return JSONResponse(
@@ -342,3 +343,4 @@ async def server_error_handler(request: Request, exc: HTTPException):
         status_code=500,
         content={"detail": "Internal Server Error"}
     )
+
