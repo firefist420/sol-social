@@ -16,7 +16,9 @@ def init_session():
         "user_data": {"wallet_address": "", "auth_token": None},
         "wallet_connected": False,
         "hcaptcha_verified": False,
-        "hcaptcha_token": None
+        "hcaptcha_token": None,
+        "signed_message": None,
+        "message": None
     }
     for key, default_value in required_keys.items():
         if key not in st.session_state:
@@ -48,11 +50,11 @@ def set_background():
         width: 300px;
     }
     .captcha-instructions {
-        color: white;
+        color: white !important;
         font-family: 'Arial', sans-serif;
         font-size: 24px;
         font-weight: bold;
-        margin: 0 0 10px 0;
+        margin: 0 0 15px 0;
         text-align: center;
     }
     .connect-button {
@@ -98,47 +100,35 @@ async def check_backend():
 def show_auth_components():
     components.html(f"""
     <div class="auth-container">
-        <p class="captcha-instructions">Verify You're Human</p>
+        <p class="captcha-instructions">Complete the captcha to connect your wallet</p>
         <script src="https://js.hcaptcha.com/1/api.js" async defer></script>
         <div class="h-captcha" data-sitekey="{HCAPTCHA_SITEKEY}" data-callback="onCaptchaSubmit"></div>
         <button id="connect-button" class="connect-button">
             <img src="https://i.ibb.co/fd1PzFX9/connect-wallet-button.png" alt="Wallet">
             Connect Wallet
         </button>
-        <script src="https://unpkg.com/@solana/web3.js@latest/lib/index.iife.min.js"></script>
         <script>
         function onCaptchaSubmit(token) {{
-            fetch("{BACKEND_URL}/verify-captcha", {{
-                method: "POST",
-                headers: {{ "Content-Type": "application/json" }},
-                body: JSON.stringify({{ token: token }})
-            }})
-            .then(response => response.json())
-            .then(data => {{
-                if (data.success) {{
-                    window.parent.postMessage({{
-                        type: "hcaptcha_verified",
-                        token: token,
-                        verified: true
-                    }}, "*");
-                    document.getElementById("connect-button").style.display = "flex";
-                }} else {{
-                    hcaptcha.reset();
-                    alert("Verification failed. Please try again.");
-                }}
-            }})
-            .catch(error => {{
-                console.error("Error:", error);
-                hcaptcha.reset();
-                alert("Verification error. Please try again.");
-            }});
+            window.parent.postMessage({{
+                type: "hcaptcha_verified",
+                token: token,
+                verified: true
+            }}, "*");
+            document.getElementById("connect-button").style.display = "flex";
         }}
+        
+        window.hcaptchaOnLoad = function() {{
+            hcaptcha.render('h-captcha', {{
+                sitekey: '{HCAPTCHA_SITEKEY}',
+                callback: onCaptchaSubmit
+            }});
+        }};
         
         async function connectWallet() {{
             try {{
                 const provider = window.solana;
                 if (!provider?.isPhantom) {{
-                    alert("Please install Phantom Wallet");
+                    alert("Phantom wallet not found. Please install Phantom extension.");
                     return;
                 }}
                 
@@ -156,15 +146,15 @@ def show_auth_components():
                 }}, "*");
                 
             }} catch (error) {{
-                console.error("Error:", error);
-                alert("Connection failed: " + error.message);
+                console.error("Wallet connection error:", error);
+                alert("Failed to connect wallet: " + error.message);
             }}
         }}
         
         document.getElementById("connect-button").addEventListener("click", connectWallet);
         </script>
     </div>
-    """, height=260)
+    """, height=280)
 
 async def auth_wallet(wallet, sig, msg, hcaptcha_token):
     try:
@@ -201,12 +191,12 @@ async def main():
 
     show_auth_components()
 
-    if st.session_state.hcaptcha_verified and st.session_state.get("wallet_connected"):
+    if st.session_state.hcaptcha_verified and st.session_state.wallet_connected:
         if st.session_state.hcaptcha_token and st.session_state.user_data["wallet_address"]:
             await auth_wallet(
                 st.session_state.user_data["wallet_address"],
-                st.session_state.get("signed_message"),
-                st.session_state.get("message"),
+                st.session_state.signed_message,
+                st.session_state.message,
                 st.session_state.hcaptcha_token
             )
 
@@ -220,6 +210,7 @@ async def main():
                     pass
 
 components.html("""
+<script src="https://unpkg.com/@solana/web3.js@latest/lib/index.iife.min.js"></script>
 <script>
 window.addEventListener("message", (event) => {
     if (event.data.type === "walletConnected") {
