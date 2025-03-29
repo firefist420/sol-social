@@ -20,6 +20,9 @@ from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, F
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session, relationship
 import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 logging.basicConfig(
     level=logging.INFO,
@@ -33,15 +36,15 @@ logger = logging.getLogger(__name__)
 
 class Settings:
     def __init__(self):
-        self.hcaptcha_secret = os.getenv("HCAPTCHA_SECRET", "ES_9f53170c4cda406bb9876e00087807c5")
-        self.hcaptcha_sitekey = os.getenv("HCAPTCHA_SITEKEY", "fc42e7c4-9244-4726-a4c6-1f1e37c45ff8")
-        self.solana_rpc_url = os.getenv("SOLANA_RPC_URL", "https://api.mainnet-beta.solana.com")
-        self.jwt_secret = os.getenv("JWT_SECRET", "d95dbb2e3fa2c0e6c064dc3598d3cebf")
-        self.jwt_algorithm = os.getenv("JWT_ALGORITHM", "HS256")
-        self.jwt_expire_minutes = int(os.getenv("JWT_EXPIRE_MINUTES", "10080"))
-        self.database_url = os.getenv("DATABASE_URL", "sqlite:///./solsocial.db")
-        self.cors_origins = os.getenv("CORS_ORIGINS", "https://solsocial-frontend-firefist420s-projects.vercel.app,http://localhost:8501").split(",")
-        self.environment = os.getenv("ENVIRONMENT", "production")
+        self.hcaptcha_secret = os.getenv("HCAPTCHA_SECRET")
+        self.hcaptcha_sitekey = os.getenv("HCAPTCHA_SITEKEY")
+        self.solana_rpc_url = os.getenv("SOLANA_RPC_URL")
+        self.jwt_secret = os.getenv("JWT_SECRET")
+        self.jwt_algorithm = os.getenv("JWT_ALGORITHM")
+        self.jwt_expire_minutes = int(os.getenv("JWT_EXPIRE_MINUTES"))
+        self.database_url = os.getenv("DATABASE_URL")
+        self.cors_origins = os.getenv("CORS_ORIGINS", "").split(",")
+        self.environment = os.getenv("ENVIRONMENT")
 
 settings = Settings()
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -92,10 +95,11 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origins,
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"]
 )
 
 @app.middleware("http")
@@ -211,10 +215,18 @@ async def health_check():
             db.execute("SELECT 1")
         solana_client = Client(settings.solana_rpc_url)
         solana_client.get_version()
-        return {"status": "healthy"}
+        return JSONResponse(
+            content={"status": "healthy"},
+            status_code=200,
+            headers={"Access-Control-Allow-Origin": "*"}
+        )
     except Exception as e:
-        logger.error(f"Health check failed: {e}")
-        raise HTTPException(status_code=503)
+        logger.error(f"Health check failed: {str(e)}")
+        return JSONResponse(
+            content={"status": "unhealthy", "error": str(e)},
+            status_code=503,
+            headers={"Access-Control-Allow-Origin": "*"}
+        )
 
 @app.post("/verify-captcha")
 async def verify_captcha(token: str = Form(...)):
