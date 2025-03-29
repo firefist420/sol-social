@@ -8,8 +8,8 @@ from dotenv import load_dotenv
 import streamlit.components.v1 as components
 
 load_dotenv()
-BACKEND_URL = os.getenv("BACKEND_URL")
-HCAPTCHA_SITEKEY = os.getenv("HCAPTCHA_SITEKEY")
+BACKEND_URL = os.getenv("BACKEND_URL", "https://sol-social-backend.onrender.com")
+HCAPTCHA_SITEKEY = os.getenv("HCAPTCHA_SITEKEY", "fc42e7c4-9244-4726-a4c6-1f1e37c45ff8")
 
 st.set_page_config(page_title="SolSocial", layout="wide", page_icon="🚀")
 
